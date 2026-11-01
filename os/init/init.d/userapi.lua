@@ -4,7 +4,7 @@
 -- the identity, environment, and task bookkeeping that init scripts use, and
 -- records spawn requests so a future process backend can consume them.
 
-local userapi = {
+--[[ local userapi = {
     users = {},
     current = "root",
     environment = {},
@@ -132,6 +132,7 @@ function userapi:setEnv(key, value)
     self.error = nil
     return true
 end
+]]
 
 function userapi:spawn(program, arguments)
     if type(program) ~= "string" or program == "" then

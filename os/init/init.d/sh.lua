@@ -1,143 +1,200 @@
--- Non-interactive and interactive Lua shell used by the GothRTOS init script.
---
--- Boot uses shell:run() to establish a working directory and source an optional
--- startup file. It does not block waiting for input; a REPL is available only
--- through shell:interactive() or shell:repl().
 
-local path = require("path")
+-- GothRTOS Shell
+-- sh.lua
+-- Version 0.1.0
 
-local shell = {
+local sh = {
+    version = "0.1.0",
+    running = true,
     cwd = "/",
-    running = false,
-    error = nil,
+    env = {},
+    commands = {},
     history = {},
-    startup_files = { ".shrc", "startup.lua" }
+    prompt = "$> "
 }
 
-function shell:getCwd()
-    return self.cwd
+-- Standard library interface
+local std = require("base/std")
+
+local function write(s)
+    std.write(tostring(s))
 end
 
-function shell:setCwd(value)
-    if type(value) ~= "string" or value == "" then
-        return false, self:setError("invalid working directory")
+local function println(s)
+    write(tostring(s or "") .. "\n")
+end
+
+local function read()
+    return std.read()
+end
+
+-- Path handling
+local function normalize_path(path)
+    if path == "" then
+        return sh.cwd
     end
 
-    self.cwd = path.normalize(value)
-    self.error = nil
+    if path:sub(1, 1) ~= "/" then
+        path = sh.cwd .. "/" .. path
+    end
+
+    local parts = {}
+
+    for part in path:gmatch("[^/]+") do
+        if part == ".." then
+            table.remove(parts)
+        elseif part ~= "." then
+            parts[#parts + 1] = part
+        end
+    end
+
+    return "/" .. table.concat(parts, "/")
+end
+
+-- Command registration
+local function command(name, callback)
+    sh.commands[name] = callback
+end
+
+-- Built-in commands
+command("help", function()
+    println("GothRTOS Shell " .. sh.version)
+    println("Available commands:")
+
+    for name in pairs(sh.commands) do
+        println("  " .. name)
+    end
+end)
+
+command("echo", function(args)
+    println(table.concat(args, " "))
+end)
+
+command("pwd", function()
+    println(sh.cwd)
+end)
+
+command("cd", function(args)
+    local path = normalize_path(args[1] or "/")
+
+    if std.exists(path) and std.is_dir(path) then
+        sh.cwd = path
+    else
+        println("cd: directory not found: " .. path)
+    end
+end)
+
+command("clear", function()
+    std.clear()
+end)
+
+command("history", function()
+    for i, entry in ipairs(sh.history) do
+        println(i .. "  " .. entry)
+    end
+end)
+
+command("exit", function()
+    sh.running = false
+end)
+
+-- Variable assignment
+local function assign_variable(line)
+    local key, value = line:match("^([%a_][%w_]*)=(.*)$")
+
+    if not key then
+        return false
+    end
+
+    sh.env[key] = value
     return true
 end
 
-function shell:getError()
-    return self.error
+-- Variable expansion
+local function expand_variables(line)
+    return (line:gsub("%$([%a_][%w_]*)", function(key)
+        return sh.env[key] or ""
+    end))
 end
 
-function shell:setError(message)
-    self.error = message ~= nil and tostring(message) or nil
-    return self.error
-end
+-- Basic command parser
+local function parse(line)
+    local args = {}
+    local current = ""
+    local quote = nil
 
-function shell:execute(line, chunk_name)
-    if type(line) ~= "string" or line == "" then
-        return false, self:setError("empty shell command")
-    end
+    for i = 1, #line do
+        local c = line:sub(i, i)
 
-    self.history[#self.history + 1] = line
-
-    local chunk, load_error = load(line, chunk_name or "=(shell)")
-    if chunk == nil then
-        return false, self:setError(load_error)
-    end
-
-    local ok, result = pcall(chunk)
-    if not ok then
-        return false, self:setError(result)
-    end
-
-    self.error = nil
-    return true, result
-end
-
-function shell:source(file)
-    if type(file) ~= "string" or file == "" then
-        return false, self:setError("invalid script path")
-    end
-
-    local handle, open_error = io.open(file, "r")
-    if handle == nil then
-        return false, self:setError(open_error)
-    end
-
-    local source = handle:read("*a")
-    handle:close()
-    return self:execute(source, "@" .. file)
-end
-
-function shell:run(directory)
-    if directory ~= nil then
-        local ok, error_message = self:setCwd(directory)
-        if not ok then
-            return false, error_message
-        end
-    end
-
-    self.running = true
-    self.error = nil
-
-    for _, name in ipairs(self.startup_files) do
-        local file = path.join(self.cwd, name)
-        local handle = io.open(file, "r")
-        if handle ~= nil then
-            handle:close()
-            local ok, error_message = self:source(file)
-            if not ok then
-                self.running = false
-                return false, error_message
-            end
-            break
-        end
-    end
-
-    self.running = false
-    return true
-end
-
-function shell:interactive(input, output)
-    input = input or io.stdin
-    output = output or io.stdout
-
-    self.running = true
-    while true do
-        output:write("goth> ")
-        output:flush()
-
-        local line = input:read("*l")
-        if line == nil then
-            output:write("\n")
-            break
-        end
-
-        line = line:gsub("^%s+", ""):gsub("%s+$", "")
-        if line == "exit" or line == "quit" then
-            break
-        elseif line ~= "" then
-            local ok, result = self:execute(line)
-            if ok then
-                if result ~= nil then
-                    output:write(tostring(result) .. "\n")
-                end
+        if quote then
+            if c == quote then
+                quote = nil
             else
-                output:write("sh: " .. tostring(result) .. "\n")
+                current = current .. c
             end
+        elseif c == '"' or c == "'" then
+            quote = c
+        elseif c:match("%s") then
+            if #current > 0 then
+                args[#args + 1] = current
+                current = ""
+            end
+        else
+            current = current .. c
         end
     end
 
-    self.running = false
-    return true
+    if #current > 0 then
+        args[#args + 1] = current
+    end
+
+    return args
 end
 
-function shell:repl()
-    return self:interactive(io.stdin, io.stdout)
+-- Execute command
+local function execute(line)
+    line = expand_variables(line)
+
+    if assign_variable(line) then
+        return
+    end
+
+    local args = parse(line)
+
+    if #args == 0 then
+        return
+    end
+
+    local name = table.remove(args, 1)
+    local callback = sh.commands[name]
+
+    if callback then
+        local ok, err = pcall(callback, args)
+
+        if not ok then
+            println(name .. ": " .. tostring(err))
+        end
+    else
+        println(name .. ": command not found")
+    end
 end
 
-return shell
+-- Main shell loop
+function sh.run()
+    while sh.running do
+        write(sh.prompt)
+
+        local line = read()
+
+        if line == nil then
+            break
+        end
+
+        if line ~= "" then
+            sh.history[#sh.history + 1] = line
+            execute(line)
+        end
+    end
+end
+
+return sh
