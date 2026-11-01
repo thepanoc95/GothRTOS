@@ -198,4 +198,10 @@ function userapi:reap(id)
     return true
 end
 
+function userapi:createThread(name, id)
+end
+    
+function userapi:execvproc(pid)
+end
+    
 return userapi

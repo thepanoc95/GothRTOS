@@ -15,6 +15,16 @@ LIBC_TEST_DEFINES = -Derrno=gothc_errno -Dmalloc=gothc_malloc -Dcalloc=gothc_cal
 
 UNAME_S := $(shell uname -s 2>/dev/null)
 
+# KLib currently contains x86-specific code (including SSE2 intrinsics).
+# GothRTOS does not use KLib on ARM targets, so detect the compiler target
+# rather than the machine running make (this also handles cross-compilers).
+CC_TARGET := $(shell $(CC) -dumpmachine 2>/dev/null)
+ifneq ($(filter aarch64% arm%,$(CC_TARGET)),)
+  KLIB_ENABLED ?= no
+else
+  KLIB_ENABLED ?= yes
+endif
+
 ifeq ($(UM_PLATFORM),)
   ifeq ($(OS),Windows_NT)
     UM_PLATFORM := windows
@@ -50,6 +60,17 @@ LIBRARY = $(BUILD_DIR)/libgothrtos.a
 UM_PLATFORM_STAMP = $(BUILD_DIR)/.um_platform_$(UM_PLATFORM)
 KAPI_LIBRARY = $(BUILD_DIR)/libkapi.a
 KLIB_LIBRARY = $(BUILD_DIR)/libklib.a
+ifeq ($(KLIB_ENABLED),yes)
+KLIB_ALL_TARGETS = $(KLIB_LIBRARY)
+KLIB_TEST_TARGETS = $(KLIB_TEST_BINARY)
+KLIB_TEST_COMMAND = $(KLIB_TEST_BINARY)
+else ifeq ($(KLIB_ENABLED),no)
+KLIB_ALL_TARGETS =
+KLIB_TEST_TARGETS =
+KLIB_TEST_COMMAND =
+else
+$(error KLIB_ENABLED must be "yes" or "no")
+endif
 LIBC_LIBRARY = $(BUILD_DIR)/libgothc.a
 LUA_LIBRARY = $(BUILD_DIR)/liblua.a
 LUA_INTERPRETER_BINARY = $(BUILD_DIR)/lua
@@ -131,7 +152,7 @@ endif
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
 	rpi-zero run-rpi-zero test-rpi-zero
 
-all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_LIBRARY) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(KERNEL_BINARY)
+all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(KERNEL_BINARY)
 
 kernel: $(KERNEL_BINARY)
 
@@ -294,11 +315,10 @@ $(CMDLINE_TEST_BINARY): tests/test_cmdline.c $(LIBRARY) include/gothrtos/cmdline
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_cmdline.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
-test: $(TEST_BINARY) $(KLIB_TEST_BINARY) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
-	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running kernel tests..."
+test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
+	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
-	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running klib tests..."
-	$(KLIB_TEST_BINARY)
+	$(KLIB_TEST_COMMAND)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running libc tests..."
 	$(LIBC_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running luaexec tests..."
