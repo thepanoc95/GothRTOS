@@ -59,6 +59,57 @@ BIN_FMT_TEST_BINARY = $(BUILD_DIR)/test_95exc
 FDT_TEST_BINARY = $(BUILD_DIR)/test_fdt
 CMDLINE_TEST_BINARY = $(BUILD_DIR)/test_cmdline
 KERNEL_BINARY = $(BUILD_DIR)/kern.ldr
+ARM_CC ?= arm-none-eabi-gcc
+ARM_OBJCOPY ?= arm-none-eabi-objcopy
+ARM_BUILD_DIR ?= $(BUILD_DIR)/arm32
+ARM_CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/arm
+ARM_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic \
+	-mcpu=cortex-a15 -marm -mfloat-abi=soft -ffreestanding -fno-builtin \
+	-fno-unwind-tables -fno-asynchronous-unwind-tables \
+	-ffunction-sections -fdata-sections -O2 -g
+ARM_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/arm32.ld \
+	-Wl,--gc-sections -Wl,-Map=$(ARM_BUILD_DIR)/kern.map
+ARM_LIBS ?= -lgcc
+ARM_C_SOURCES = rtos/kernel.c rtos/ipc.c rtos/syscall.c pexpert/common.c \
+	pexpert/arm/pe_arm32.c pexpert/arm/pe_arm32_qemu.c \
+	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
+ARM_ASM_SOURCES = pexpert/arm/arm32_start.S
+ARM_OBJECTS = $(patsubst %.c,$(ARM_BUILD_DIR)/obj/%.o,$(ARM_C_SOURCES)) \
+	$(patsubst %.S,$(ARM_BUILD_DIR)/obj/%.o,$(ARM_ASM_SOURCES))
+ARM_ELF = $(ARM_BUILD_DIR)/kern.elf
+ARM_BIN = $(ARM_BUILD_DIR)/kern.bin
+ARM_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
+	include/gothrtos/um.h include/gothrtos/arm32.h \
+	pexpert/pe_internal.h pexpert/arm/um_internal.h pexpert/arm/pe_arm32.h
+QEMU_ARM ?= qemu-system-arm
+QEMU_ARM_FLAGS ?= -M virt -cpu cortex-a15 -m 128M -nographic \
+	-semihosting-config enable=on,target=native
+
+# Raspberry Pi Zero (BCM2835, ARM1176JZF-S / ARMv6K)
+RPI_CC ?= arm-none-eabi-gcc
+RPI_OBJCOPY ?= arm-none-eabi-objcopy
+RPI_BUILD_DIR ?= $(BUILD_DIR)/rpi-zero
+RPI_CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/arm \
+	-DGOTH_ARM32_BCM2835
+ifdef GOTH_ARM32_BCM2835_UART_CLOCK
+RPI_CPPFLAGS += -DGOTH_ARM32_BCM2835_UART_CLOCK=$(GOTH_ARM32_BCM2835_UART_CLOCK)
+endif
+RPI_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic \
+	-mcpu=arm1176jzf-s -marm -mfloat-abi=soft -ffreestanding -fno-builtin \
+	-fno-unwind-tables -fno-asynchronous-unwind-tables \
+	-ffunction-sections -fdata-sections -O2 -g
+RPI_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/bcm2835.ld \
+	-Wl,--gc-sections -Wl,-Map=$(RPI_BUILD_DIR)/kernel.map
+RPI_LIBS ?= -lgcc
+RPI_C_SOURCES = rtos/kernel.c rtos/ipc.c rtos/syscall.c pexpert/common.c \
+	pexpert/arm/pe_arm32.c pexpert/arm/pe_bcm2835.c \
+	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
+RPI_ASM_SOURCES = pexpert/arm/arm32_start.S
+RPI_OBJECTS = $(patsubst %.c,$(RPI_BUILD_DIR)/obj/%.o,$(RPI_C_SOURCES)) \
+	$(patsubst %.S,$(RPI_BUILD_DIR)/obj/%.o,$(RPI_ASM_SOURCES))
+RPI_ELF = $(RPI_BUILD_DIR)/kernel.elf
+RPI_IMG = $(RPI_BUILD_DIR)/kernel.img
+QEMU_RPI_FLAGS ?= -M raspi0 -cpu arm1176 -m 512M -nographic
 LIBC_TEST_OBJECTS = $(BUILD_DIR)/libc_test/string.o $(BUILD_DIR)/libc_test/stdlib.o
 TEST_BINARY = $(BUILD_DIR)/test_kernel
 KLIB_TEST_BINARY = $(BUILD_DIR)/test_klib
@@ -77,7 +128,8 @@ ifndef V
 .SILENT:
 endif
 
-.PHONY: all test clean kernel lua
+.PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
+	rpi-zero run-rpi-zero test-rpi-zero
 
 all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_LIBRARY) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(KERNEL_BINARY)
 
@@ -85,8 +137,66 @@ kernel: $(KERNEL_BINARY)
 
 lua: $(LUA_INTERPRETER_BINARY)
 
+arm32: $(ARM_ELF) $(ARM_BIN)
+
+run-arm32: $(ARM_ELF)
+	$(QEMU_ARM) $(QEMU_ARM_FLAGS) -kernel $(ARM_ELF)
+
+test-arm32: $(ARM_ELF)
+	sh tests/run_arm32_qemu.sh $(ARM_ELF) $(ARM_BUILD_DIR)/qemu.log
+
+rpi-zero: $(RPI_ELF) $(RPI_IMG)
+
+run-rpi-zero: $(RPI_ELF)
+	$(QEMU_ARM) $(QEMU_RPI_FLAGS) -kernel $(RPI_ELF)
+
+test-rpi-zero: $(RPI_ELF)
+	sh tests/run_rpi_qemu.sh $(RPI_ELF) $(RPI_BUILD_DIR)/qemu.log
+
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
+
+$(ARM_BUILD_DIR):
+	@mkdir -p $(ARM_BUILD_DIR)
+
+$(ARM_BUILD_DIR)/obj/%.o: %.c $(ARM_HEADERS) | $(ARM_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC(arm32)" "$<"
+	$(ARM_CC) $(ARM_CPPFLAGS) $(ARM_CFLAGS) -c $< -o $@
+
+$(ARM_BUILD_DIR)/obj/%.o: %.S $(ARM_HEADERS) | $(ARM_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "AS(arm32)" "$<"
+	$(ARM_CC) $(ARM_CPPFLAGS) $(ARM_CFLAGS) -c $< -o $@
+
+$(ARM_ELF): $(ARM_OBJECTS) pexpert/arm/arm32.ld
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD(arm32)" "$@"
+	$(ARM_CC) $(ARM_CFLAGS) $(ARM_LDFLAGS) $(ARM_OBJECTS) $(ARM_LIBS) -o $@
+
+$(ARM_BIN): $(ARM_ELF)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
+	$(ARM_OBJCOPY) -O binary $< $@
+
+$(RPI_BUILD_DIR):
+	@mkdir -p $(RPI_BUILD_DIR)
+
+$(RPI_BUILD_DIR)/obj/%.o: %.c $(ARM_HEADERS) | $(RPI_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC(rpi)" "$<"
+	$(RPI_CC) $(RPI_CPPFLAGS) $(RPI_CFLAGS) -c $< -o $@
+
+$(RPI_BUILD_DIR)/obj/%.o: %.S $(ARM_HEADERS) | $(RPI_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "AS(rpi)" "$<"
+	$(RPI_CC) $(RPI_CPPFLAGS) $(RPI_CFLAGS) -c $< -o $@
+
+$(RPI_ELF): $(RPI_OBJECTS) pexpert/arm/bcm2835.ld
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD(rpi)" "$@"
+	$(RPI_CC) $(RPI_CFLAGS) $(RPI_LDFLAGS) $(RPI_OBJECTS) $(RPI_LIBS) -o $@
+
+$(RPI_IMG): $(RPI_ELF)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
+	$(RPI_OBJCOPY) -O binary $< $@
 
 $(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
