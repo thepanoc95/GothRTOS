@@ -114,6 +114,17 @@ assert(syntax_ok == false)
 assert(sh:run("/nonexistent-goth-directory") == true)
 assert(#sh.history == 3)
 
+-- luaexec runs a script with its arguments exposed through arg and varargs.
+local saved_arg = rawget(_G, "arg")
+local exec_ok, exec_error = sh:luaexec("tests/lua_smoke.lua",
+                                       {"first", "second"})
+assert(exec_ok == true, exec_error)
+assert(rawget(_G, "arg") == saved_arg)
+local missing_ok, missing_error = sh:luaexec("tests/does-not-exist.lua")
+assert(missing_ok == false)
+assert(type(missing_error) == "string")
+assert(sh:execute("luaexec tests/lua_smoke.lua first second") == true)
+
 local users = require("userapi")
 assert(users:currentUser().name == "root")
 assert(users:isRoot() == true)

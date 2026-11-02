@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <string.h>
 
 #include <stdint.h>
@@ -169,5 +170,140 @@ char *strrchr(const char *text, int character)
             return (char *)match;
         }
         text++;
+    }
+}
+
+void *memchr(const void *memory, int character, size_t count)
+{
+    const unsigned char *bytes = (const unsigned char *)memory;
+    unsigned char target = (unsigned char)character;
+    size_t index;
+
+    for (index = 0U; index < count; index++) {
+        if (bytes[index] == target) {
+            return (void *)(bytes + index);
+        }
+    }
+    return NULL;
+}
+
+char *strncat(char *destination, const char *source, size_t count)
+{
+    char *result = destination;
+
+    while (*destination != '\0') {
+        destination++;
+    }
+    while (count > 0U && *source != '\0') {
+        *destination++ = *source++;
+        count--;
+    }
+    *destination = '\0';
+    return result;
+}
+
+char *strstr(const char *text, const char *needle)
+{
+    size_t needle_length;
+
+    if (*needle == '\0') {
+        return (char *)text;
+    }
+    needle_length = strlen(needle);
+    while (*text != '\0') {
+        if (*text == *needle &&
+            strncmp(text, needle, needle_length) == 0) {
+            return (char *)text;
+        }
+        text++;
+    }
+    return NULL;
+}
+
+char *strpbrk(const char *text, const char *accept)
+{
+    while (*text != '\0') {
+        if (strchr(accept, *text) != NULL) {
+            return (char *)text;
+        }
+        text++;
+    }
+    return NULL;
+}
+
+size_t strspn(const char *text, const char *accept)
+{
+    size_t length = 0U;
+
+    while (text[length] != '\0' &&
+           strchr(accept, text[length]) != NULL) {
+        length++;
+    }
+    return length;
+}
+
+size_t strcspn(const char *text, const char *reject)
+{
+    size_t length = 0U;
+
+    while (text[length] != '\0' &&
+           strchr(reject, text[length]) == NULL) {
+        length++;
+    }
+    return length;
+}
+
+int strcoll(const char *left, const char *right)
+{
+    return strcmp(left, right);
+}
+
+char *strerror(int error_number)
+{
+    switch (error_number) {
+    case 0:
+        return (char *)"no error";
+    case EPERM:
+        return (char *)"operation not permitted";
+    case ENOENT:
+        return (char *)"no such file or directory";
+    case EINTR:
+        return (char *)"interrupted system call";
+    case EIO:
+        return (char *)"input/output error";
+    case EAGAIN:
+        return (char *)"resource temporarily unavailable";
+    case ENOMEM:
+        return (char *)"out of memory";
+    case EACCES:
+        return (char *)"permission denied";
+    case EEXIST:
+        return (char *)"file exists";
+    case ENOTDIR:
+        return (char *)"not a directory";
+    case EISDIR:
+        return (char *)"is a directory";
+    case EINVAL:
+        return (char *)"invalid argument";
+    case EMFILE:
+        return (char *)"too many open files";
+    case ESPIPE:
+        return (char *)"illegal seek";
+    case EDOM:
+        return (char *)"domain error";
+    case ERANGE:
+        return (char *)"result out of range";
+    case ENOSYS:
+        return (char *)"function not implemented";
+    case ENAMETOOLONG:
+        return (char *)"file name too long";
+    case ENOTEMPTY:
+        return (char *)"directory not empty";
+    case ELOOP:
+        return (char *)"too many symbolic links";
+    case EOVERFLOW:
+        return (char *)"value too large";
+    default:
+        return (char *)"unknown error";
     }
 }

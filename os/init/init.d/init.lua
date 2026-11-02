@@ -104,6 +104,12 @@ local function declare_mounts()
     return true
 end
 
+local function loadShell()
+    print("OSBoot: luaexec: /kern/init.d/sh/lua")
+    shell:run()
+end
+
+
 function main()
     print("OSBoot: init 0")
 

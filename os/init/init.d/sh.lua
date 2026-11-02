@@ -7,6 +7,26 @@
 -- boot environment use the shell both as a command prompt and as a script
 -- console.
 
+-- Resolve sibling modules relative to this file. The boot script already puts
+-- this directory on package.path, but sh.lua can also be executed directly as
+-- an init script (-init=os/init/init.d/sh.lua), where it has to bootstrap the
+-- lookup path itself.
+local function script_directory()
+    local source = debug.getinfo(1, "S").source
+    if source:sub(1, 1) == "@" then
+        source = source:sub(2)
+    end
+    source = source:gsub("\\", "/")
+    return source:match("^(.*)/[^/]+$") or "."
+end
+
+do
+    local here = script_directory()
+    if not package.path:find(here .. "/?.lua", 1, true) then
+        package.path = here .. "/?.lua;" .. package.path
+    end
+end
+
 local sh = {
     version = "0.1.0",
     running = true,
@@ -71,7 +91,7 @@ function sh:getCwd()
 end
 
 command("help", function()
-    println("GothRTOS Shell " .. sh.version)
+    println("OSShell " .. sh.version)
     println("Available commands:")
 
     local names = {}
@@ -112,8 +132,12 @@ command("history", function()
     end
 end)
 
-command("exit", function()
+command("halt", function()
     sh.running = false
+end)
+
+command("shutdown", function()
+	sh.runnning = false
 end)
 
 local function assign_variable(line)
@@ -222,6 +246,87 @@ function sh:getHistory()
     return copy
 end
 
+-- Loads and runs a Lua script. Relative names are resolved against the
+-- shell's current directory first and then against the host working
+-- directory, so both virtual paths and source-tree paths work. Arguments are
+-- published through the script's `arg` table (arg[0] is the resolved path)
+-- and passed as varargs. Returns (true, results...) or (false, message).
+function sh:luaexec(filename, args)
+    if type(filename) ~= "string" or filename == "" then
+        return false, "invalid script path"
+    end
+    if args == nil then
+        args = {}
+    elseif type(args) ~= "table" then
+        return false, "script arguments must be a table"
+    end
+
+    local candidates = {}
+    local function add_candidate(candidate)
+        if candidate == nil or candidate == "" then
+            return
+        end
+        for _, value in ipairs(candidates) do
+            if value == candidate then
+                return
+            end
+        end
+        candidates[#candidates + 1] = candidate
+    end
+
+    if filename:sub(1, 1) == "/" then
+        add_candidate(filename)
+    else
+        add_candidate(normalize_path(filename))
+        add_candidate(filename)
+    end
+
+    local chunk = nil
+    local load_error = nil
+    local resolved = nil
+
+    for _, candidate in ipairs(candidates) do
+        chunk, load_error = loadfile(candidate)
+        if chunk ~= nil then
+            resolved = candidate
+            break
+        end
+    end
+
+    if chunk == nil then
+        return false, load_error or ("cannot load script: " .. filename)
+    end
+
+    local argv = {[0] = resolved}
+    for index = 1, #args do
+        argv[index] = tostring(args[index])
+    end
+
+    local previous_arg = rawget(_G, "arg")
+    _G.arg = argv
+    local results = table.pack(pcall(chunk, table.unpack(argv, 1, #args)))
+    _G.arg = previous_arg
+
+    if not results[1] then
+        return false, results[2]
+    end
+    return true, table.unpack(results, 2, results.n)
+end
+
+command("luaexec", function(args)
+    local filename = table.remove(args, 1)
+
+    if filename == nil then
+        error("script path required", 0)
+    end
+
+    local ok, result = sh:luaexec(filename, args)
+    if not ok then
+        error(result, 0)
+    end
+    return true, result
+end)
+
 -- Runs the interactive shell. When a directory is supplied the shell only
 -- starts if that directory exists; a missing directory is a graceful no-op so
 -- callers such as the boot script do not fail on a partial root.
@@ -237,7 +342,7 @@ function sh:run(directory)
     end
 
     self.running = true
-    println("GothRTOS Shell " .. self.version .. " (type 'help' for commands)")
+    println("OSShell " .. self.version .. " (type 'help' for commands)")
 
     while self.running do
         write(self.prompt)
@@ -251,6 +356,13 @@ function sh:run(directory)
         end
     end
     return true
+end
+
+-- When executed directly as an init script (no module arguments), hand over
+-- to the interactive shell. `require("sh")` passes the module name as the
+-- first vararg, so the boot script keeps getting the module table only.
+if select("#", ...) == 0 then
+    sh:run()
 end
 
 return sh

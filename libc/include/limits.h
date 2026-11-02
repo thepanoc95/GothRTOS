@@ -2,6 +2,13 @@
 #define GOTH_LIBC_LIMITS_H
 
 #define CHAR_BIT __CHAR_BIT__
+#if defined(__CHAR_UNSIGNED__)
+#define CHAR_MIN 0
+#define CHAR_MAX UCHAR_MAX
+#else
+#define CHAR_MIN (-__SCHAR_MAX__ - 1)
+#define CHAR_MAX __SCHAR_MAX__
+#endif
 #define SCHAR_MIN (-__SCHAR_MAX__ - 1)
 #define SCHAR_MAX __SCHAR_MAX__
 #define UCHAR_MAX (__SCHAR_MAX__ * 2U + 1U)
@@ -13,10 +20,10 @@
 #define UINT_MAX (__INT_MAX__ * 2U + 1U)
 #define LONG_MIN (-__LONG_MAX__ - 1L)
 #define LONG_MAX __LONG_MAX__
-#define ULONG_MAX ((unsigned long)__LONG_MAX__ * 2UL + 1UL)
+#define ULONG_MAX ((__LONG_MAX__ * 2UL) + 1UL)
 #define LLONG_MIN (-__LONG_LONG_MAX__ - 1LL)
 #define LLONG_MAX __LONG_LONG_MAX__
-#define ULLONG_MAX ((unsigned long long)__LONG_LONG_MAX__ * 2ULL + 1ULL)
+#define ULLONG_MAX ((__LONG_LONG_MAX__ * 2ULL) + 1ULL)
 #define MB_LEN_MAX 16
 
 #endif

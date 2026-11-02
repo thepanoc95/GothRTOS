@@ -11,7 +11,11 @@ LIBC_CFLAGS ?= -std=c11 -ffreestanding -fno-builtin -static
 LUA_CPPFLAGS ?= -Ios/lua -Iinclude
 LUA_CFLAGS ?= -std=c11 -O2 -static
 LUA_LIBS ?= -lm
-LIBC_TEST_DEFINES = -Derrno=gothc_errno -Dmalloc=gothc_malloc -Dcalloc=gothc_calloc -Drealloc=gothc_realloc -Dfree=gothc_free -Dmemcpy=gothc_memcpy -Dmemmove=gothc_memmove -Dmemset=gothc_memset -Dmemcmp=gothc_memcmp -Dstrlen=gothc_strlen -Dstrnlen=gothc_strnlen -Dstrcmp=gothc_strcmp -Dstrncmp=gothc_strncmp -Dstrcpy=gothc_strcpy -Dstrncpy=gothc_strncpy -Dstrcat=gothc_strcat -Dstrchr=gothc_strchr -Dstrrchr=gothc_strrchr -Dstrtol=gothc_strtol -Dstrtoul=gothc_strtoul -Dstrtoll=gothc_strtoll -Dstrtoull=gothc_strtoull -Datoi=gothc_atoi -Datol=gothc_atol -Datoll=gothc_atoll -Dabs=gothc_abs -Dlabs=gothc_labs
+GOTHC_LUA_CPPFLAGS ?= -Ilibc/include -Ios/lua -Iinclude -static
+GOTHC_LUA_CFLAGS ?= -std=c11 -O2 -ffreestanding -fno-builtin \
+	-fno-stack-protector -fno-pie -static
+GOTHC_LUA_LDFLAGS ?= -nostdlib -nostartfiles -static -no-pie
+LIBC_TEST_DEFINES = -Derrno=gothc_errno -Dmalloc=gothc_malloc -Dcalloc=gothc_calloc -Drealloc=gothc_realloc -Dfree=gothc_free -Dmemcpy=gothc_memcpy -Dmemmove=gothc_memmove -Dmemset=gothc_memset -Dmemcmp=gothc_memcmp -Dstrlen=gothc_strlen -Dstrnlen=gothc_strnlen -Dstrcmp=gothc_strcmp -Dstrncmp=gothc_strncmp -Dstrcpy=gothc_strcpy -Dstrncpy=gothc_strncpy -Dstrcat=gothc_strcat -Dstrchr=gothc_strchr -Dstrrchr=gothc_strrchr -Dstrtol=gothc_strtol -Dstrtoul=gothc_strtoul -Dstrtoll=gothc_strtoll -Dstrtoull=gothc_strtoull -Datoi=gothc_atoi -Datol=gothc_atol -Datoll=gothc_atoll -Dabs=gothc_abs -Dlabs=gothc_labs -Dllabs=gothc_llabs
 
 UNAME_S := $(shell uname -s 2>/dev/null)
 
@@ -19,6 +23,13 @@ UNAME_S := $(shell uname -s 2>/dev/null)
 # GothRTOS does not use KLib on ARM targets, so detect the compiler target
 # rather than the machine running make (this also handles cross-compilers).
 CC_TARGET := $(shell $(CC) -dumpmachine 2>/dev/null)
+ifneq ($(filter aarch64% arm64%,$(CC_TARGET)),)
+  GOTHC_START_SOURCE ?= libc/src/start_aarch64.S
+else ifneq ($(filter x86_64% amd64%,$(CC_TARGET)),)
+  GOTHC_START_SOURCE ?= libc/src/start_x86_64.S
+else
+  GOTHC_START_SOURCE ?=
+endif
 ifneq ($(filter aarch64% arm%,$(CC_TARGET)),)
   KLIB_ENABLED ?= no
 else
@@ -52,10 +63,18 @@ OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 KAPI_OBJECT = $(BUILD_DIR)/libkapi/kapi.o
 KLIB_SOURCES = kalloc.c kbarena.c keigen.c kexpr.c kmath.c kmempool.c knhx.c ksa.c kson.c kstring.c ksw.c kthread.c
 KLIB_OBJECTS = $(patsubst %.c,$(BUILD_DIR)/klib/%.o,$(KLIB_SOURCES))
-LIBC_SOURCES = libc/src/string.c libc/src/stdlib.c
+LIBC_SOURCES = libc/src/string.c libc/src/stdlib.c libc/src/stdio.c \
+	libc/src/convert.c libc/src/process.c libc/src/ctype.c \
+	libc/src/locale.c libc/src/math.c libc/src/time.c libc/src/signal.c \
+	libc/src/heap.c libc/src/start.c
 LIBC_OBJECTS = $(patsubst libc/src/%.c,$(BUILD_DIR)/libc/%.o,$(LIBC_SOURCES))
+LIBC_HEADERS = $(wildcard libc/include/*.h) include/gothrtos/libc.h \
+	libc/src/goth_syscall.h libc/third_party/stb_sprintf.h
 LUA_SOURCES = lapi.c lcode.c lctype.c ldebug.c ldo.c ldump.c lfunc.c lgc.c llex.c lmem.c lobject.c lopcodes.c lparser.c lstate.c lstring.c ltable.c ltm.c lundump.c lvm.c lzio.c lauxlib.c lbaselib.c lcorolib.c ldblib.c liolib.c lmathlib.c loslib.c ltablib.c lstrlib.c lutf8lib.c loadlib.c linit.c
 LUA_OBJECTS = $(patsubst %.c,$(BUILD_DIR)/luaobj/%.o,$(LUA_SOURCES))
+GOTHC_LUA_OBJECTS = $(patsubst %.c,$(BUILD_DIR)/gothclua/%.o,$(LUA_SOURCES))
+GOTHC_LUA_MAIN_OBJECT = $(BUILD_DIR)/gothclua/lua.o
+GOTHC_START_OBJECT = $(patsubst libc/src/%.S,$(BUILD_DIR)/gothclua/%.o,$(GOTHC_START_SOURCE))
 LIBRARY = $(BUILD_DIR)/libgothrtos.a
 UM_PLATFORM_STAMP = $(BUILD_DIR)/.um_platform_$(UM_PLATFORM)
 KAPI_LIBRARY = $(BUILD_DIR)/libkapi.a
@@ -73,6 +92,7 @@ $(error KLIB_ENABLED must be "yes" or "no")
 endif
 LIBC_LIBRARY = $(BUILD_DIR)/libgothc.a
 LUA_LIBRARY = $(BUILD_DIR)/liblua.a
+GOTHC_LUA_LIBRARY = $(BUILD_DIR)/liblua-gothc.a
 LUA_INTERPRETER_BINARY = $(BUILD_DIR)/lua
 LUAEXEC_OBJECT = $(BUILD_DIR)/os/init/luaexec.o
 GOTHLIB_OBJECT = $(BUILD_DIR)/os/init/gothlib.o
@@ -258,7 +278,7 @@ $(KLIB_LIBRARY): $(KLIB_OBJECTS)
 	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
 	$(AR) rcs $@ $^
 
-$(BUILD_DIR)/libc/%.o: libc/src/%.c libc/include/string.h libc/include/stdlib.h libc/include/errno.h libc/include/limits.h include/gothrtos/libc.h | $(BUILD_DIR)
+$(BUILD_DIR)/libc/%.o: libc/src/%.c $(LIBC_HEADERS) | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(LIBC_CPPFLAGS) $(LIBC_CFLAGS) -c $< -o $@
@@ -276,9 +296,27 @@ $(LUA_LIBRARY): $(LUA_OBJECTS)
 	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
 	$(AR) rcs $@ $^
 
-$(LUA_INTERPRETER_BINARY): os/lua/lua.c $(LUA_LIBRARY) os/lua/lua.h os/lua/lauxlib.h os/lua/lualib.h | $(BUILD_DIR)
+$(BUILD_DIR)/gothclua/%.o: os/lua/%.c $(LIBC_HEADERS) | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC(gothc)" "$<"
+	$(CC) $(GOTHC_LUA_CPPFLAGS) $(GOTHC_LUA_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/gothclua/%.o: libc/src/%.S $(LIBC_HEADERS) | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "AS(gothc)" "$<"
+	$(CC) $(GOTHC_LUA_CFLAGS) -c $< -o $@
+
+$(GOTHC_LUA_LIBRARY): $(GOTHC_LUA_OBJECTS)
+	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
+	$(AR) rcs $@ $^
+
+$(LUA_INTERPRETER_BINARY): $(GOTHC_LUA_MAIN_OBJECT) $(GOTHC_LUA_LIBRARY) \
+		$(LIBC_LIBRARY) $(GOTHC_START_OBJECT) os/lua/lua.h \
+		os/lua/lauxlib.h os/lua/lualib.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
-	$(CC) $(LUA_CPPFLAGS) $(CFLAGS) $(LUA_CFLAGS) os/lua/lua.c -L$(BUILD_DIR) -llua $(LUA_LIBS) -o $@
+	$(CC) $(GOTHC_LUA_LDFLAGS) $(GOTHC_LUA_MAIN_OBJECT) \
+		$(GOTHC_START_OBJECT) -Wl,--start-group -L$(BUILD_DIR) \
+		-llua-gothc -lgothc -Wl,--end-group -lgcc -o $@
 
 $(LUAEXEC_OBJECT): os/init/luaexec.c include/gothrtos/luaexec.h os/lua/lua.h os/lua/lauxlib.h os/lua/lualib.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)

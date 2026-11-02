@@ -481,3 +481,9 @@ long labs(long value)
 {
     return value < 0L ? -value : value;
 }
+
+long long llabs(long long value)
+{
+    return value < 0LL ? -value : value;
+}
+
