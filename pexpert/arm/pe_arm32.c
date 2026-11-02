@@ -371,12 +371,40 @@ static goth_pe_status_t arm32_pe_console_write(const char *text, size_t length)
     return GOTH_PE_STATUS_OK;
 }
 
+static goth_pe_status_t arm32_pe_console_read(char *buffer,
+                                              size_t capacity,
+                                              size_t *read_length)
+{
+    const goth_arm_board_ops_t *board = board_ops();
+    size_t count = 0U;
+
+    if (buffer == NULL || read_length == NULL) {
+        return GOTH_PE_STATUS_INVALID_ARGUMENT;
+    }
+    if (board == NULL || board->uart_getc == NULL) {
+        return GOTH_PE_STATUS_PLATFORM_ERROR;
+    }
+
+    /* Drain whatever the UART has already received, up to capacity. */
+    while (count < capacity) {
+        int character = board->uart_getc();
+
+        if (character < 0) {
+            break;
+        }
+        buffer[count++] = (char)character;
+    }
+    *read_length = count;
+    return GOTH_PE_STATUS_OK;
+}
+
 const goth_pe_platform_ops_t *goth_pe_platform_get_ops(void)
 {
     static const goth_pe_platform_ops_t platform_ops = {
         arm32_pe_initialize,
         arm32_pe_time_ns,
-        arm32_pe_console_write
+        arm32_pe_console_write,
+        arm32_pe_console_read
     };
 
     return &platform_ops;

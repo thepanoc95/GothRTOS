@@ -17,6 +17,7 @@
 #define GOTH_ARM32_UART_ICR UINT32_C(0x044)
 
 #define GOTH_ARM32_UART_FR_TXFF (UINT32_C(1) << 5)
+#define GOTH_ARM32_UART_FR_RXFE (UINT32_C(1) << 4)
 #define GOTH_ARM32_UART_CR_ENABLE (UINT32_C(0x301))
 #define GOTH_ARM32_DEFAULT_TIMER_HZ UINT32_C(62500000)
 
@@ -82,6 +83,14 @@ static void qemu_uart_putc(char character)
     uart[GOTH_ARM32_UART_DR / 4U] = (uint32_t)(unsigned char)character;
 }
 
+static int qemu_uart_getc(void)
+{
+    if ((uart[GOTH_ARM32_UART_FR / 4U] & GOTH_ARM32_UART_FR_RXFE) != 0U) {
+        return -1;
+    }
+    return (int)(uart[GOTH_ARM32_UART_DR / 4U] & UINT32_C(0xff));
+}
+
 static void qemu_exit(int status)
 {
     register uint32_t r0 __asm__("r0") = UINT32_C(0x84000008);
@@ -110,6 +119,7 @@ static const goth_arm_board_ops_t qemu_board_ops = {
     "QEMU ARM virt (Cortex-A15)",
     qemu_uart_init,
     qemu_uart_putc,
+    qemu_uart_getc,
     qemu_time_ns,
     qemu_exit
 };
