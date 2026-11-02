@@ -291,12 +291,43 @@ static goth_pe_status_t goth_pe_w64_console_write(const char *text,
     return GOTH_PE_STATUS_OK;
 }
 
+static goth_pe_status_t goth_pe_w64_console_read(char *buffer,
+                                                 size_t capacity,
+                                                 size_t *read_length)
+{
+    HANDLE input;
+    DWORD chunk;
+    DWORD read_count = 0U;
+
+    if (buffer == NULL || read_length == NULL) {
+        return GOTH_PE_STATUS_INVALID_ARGUMENT;
+    }
+    *read_length = 0U;
+    if (capacity == 0U) {
+        return GOTH_PE_STATUS_OK;
+    }
+
+    input = GetStdHandle(STD_INPUT_HANDLE);
+    if (input == NULL || input == INVALID_HANDLE_VALUE) {
+        return GOTH_PE_STATUS_PLATFORM_ERROR;
+    }
+
+    chunk = capacity > (size_t)MAXDWORD ? MAXDWORD : (DWORD)capacity;
+    if (!ReadFile(input, buffer, chunk, &read_count, NULL)) {
+        return GOTH_PE_STATUS_PLATFORM_ERROR;
+    }
+
+    *read_length = (size_t)read_count;
+    return GOTH_PE_STATUS_OK;
+}
+
 const goth_pe_platform_ops_t *goth_pe_platform_get_ops(void)
 {
     static const goth_pe_platform_ops_t platform_ops = {
         goth_pe_w64_initialize,
         goth_pe_w64_time_ns,
-        goth_pe_w64_console_write
+        goth_pe_w64_console_write,
+        goth_pe_w64_console_read
     };
 
     return &platform_ops;

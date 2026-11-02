@@ -1,4 +1,5 @@
 #include "gothrtos/luaexec.h"
+#include "gothrtos/gothlib.h"
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -7,6 +8,12 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+
+static void open_environment(lua_State *state)
+{
+    luaL_openlibs(state);
+    (void)goth_lua_open_userapi(state);
+}
 
 static void set_arguments(lua_State *state,
                           int argument_count,
@@ -99,7 +106,7 @@ goth_lua_status_t goth_lua_exec_file(const char *path,
     if (state == NULL) {
         return GOTH_LUA_OUT_OF_MEMORY;
     }
-    luaL_openlibs(state);
+    open_environment(state);
     set_arguments(state, argument_count, arguments);
     status = luaL_loadfilex(state, path, NULL);
     return execute_chunk(status, state);
@@ -126,7 +133,7 @@ goth_lua_status_t goth_lua_exec_string(const char *source,
     if (state == NULL) {
         return GOTH_LUA_OUT_OF_MEMORY;
     }
-    luaL_openlibs(state);
+    open_environment(state);
     set_arguments(state, argument_count, arguments);
     status = luaL_loadbufferx(state, source, strlen(source),
                               chunk_name != NULL ? chunk_name : "=(string)",

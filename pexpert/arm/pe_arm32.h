@@ -9,6 +9,8 @@ typedef struct {
     const char *name;
     void (*uart_init)(void);
     void (*uart_putc)(char character);
+    /* Returns the next received byte, or -1 when the receive FIFO is empty. */
+    int (*uart_getc)(void);
     uint64_t (*time_ns)(void);
     void (*exit)(int status);
 } goth_arm_board_ops_t;

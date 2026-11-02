@@ -406,12 +406,42 @@ static goth_pe_status_t goth_pe_linux_console_write(const char *text,
     return GOTH_PE_STATUS_OK;
 }
 
+static goth_pe_status_t goth_pe_linux_console_read(char *buffer,
+                                                   size_t capacity,
+                                                   size_t *read_length)
+{
+    ssize_t read_result;
+
+    if (buffer == NULL || read_length == NULL) {
+        return GOTH_PE_STATUS_INVALID_ARGUMENT;
+    }
+    *read_length = 0U;
+    if (capacity == 0U) {
+        return GOTH_PE_STATUS_OK;
+    }
+
+    for (;;) {
+        read_result = read(STDIN_FILENO, buffer, capacity);
+        if (read_result < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return GOTH_PE_STATUS_PLATFORM_ERROR;
+        }
+        break;
+    }
+
+    *read_length = (size_t)read_result;
+    return GOTH_PE_STATUS_OK;
+}
+
 const goth_pe_platform_ops_t *goth_pe_platform_get_ops(void)
 {
     static const goth_pe_platform_ops_t platform_ops = {
         goth_pe_linux_initialize,
         goth_pe_linux_time_ns,
-        goth_pe_linux_console_write
+        goth_pe_linux_console_write,
+        goth_pe_linux_console_read
     };
 
     return &platform_ops;

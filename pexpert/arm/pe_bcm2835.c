@@ -24,6 +24,7 @@
 #define GOTH_ARM32_UART_ICR UINT32_C(0x044)
 
 #define GOTH_ARM32_UART_FR_TXFF (UINT32_C(1) << 5)
+#define GOTH_ARM32_UART_FR_RXFE (UINT32_C(1) << 4)
 #define GOTH_ARM32_UART_CR_ENABLE (UINT32_C(0x301))
 #define GOTH_ARM32_UART_BAUD UINT32_C(115200)
 
@@ -83,6 +84,14 @@ static void bcm2835_uart_putc(char character)
     uart[GOTH_ARM32_UART_DR / 4U] = (uint32_t)(unsigned char)character;
 }
 
+static int bcm2835_uart_getc(void)
+{
+    if ((uart[GOTH_ARM32_UART_FR / 4U] & GOTH_ARM32_UART_FR_RXFE) != 0U) {
+        return -1;
+    }
+    return (int)(uart[GOTH_ARM32_UART_DR / 4U] & UINT32_C(0xff));
+}
+
 static uint64_t bcm2835_time_ns(void)
 {
     uint32_t high;
@@ -115,6 +124,7 @@ static const goth_arm_board_ops_t bcm2835_board_ops = {
     "Raspberry Pi Zero (BCM2835)",
     bcm2835_uart_init,
     bcm2835_uart_putc,
+    bcm2835_uart_getc,
     bcm2835_time_ns,
     bcm2835_exit
 };

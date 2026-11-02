@@ -23,7 +23,7 @@ make test     # runs the host test suite
 
 The host build produces:
 
-- `build/libgothrtos.a` — kernel, IPC, syscall and pexpert code
+- `build/libgothrtos.a` — kernel, IPC, syscall, userland API and pexpert code
 - `build/libkapi.a` — kernel API
 - `build/libgothc.a` — freestanding C library
 - `build/liblua.a` and `build/lua` — Lua 5.5.1 and a standalone interpreter
@@ -48,6 +48,44 @@ Kernel command-line options are passed to the init script as Lua `arg` entries
 in `key=value` form and are readable through `base:getOption("root")`.
 `os.lua` (also published as `gothos`), `path.lua`, `kernel_mounts.lua`,
 `kernelmode.lua`, `sh.lua` and `userapi.lua` provide the boot environment.
+
+## The GothRTOS userland API
+
+GothRTOS has no POSIX, UNIX or JME surface. The nanokernel only schedules
+cooperative tasks and moves messages between endpoints; everything else is
+usermode policy, and the userland is Lua. The OS API is therefore a set of Lua
+modules under `os/init/init.d/base/`:
+
+- `base/io` — console: `write`, `puts`, `println`, `print`, `printf`, `read`,
+  `clear`
+- `base/sys` — clock and task control: `ticks`, `timeNs`, `timeMs`, `sleep`,
+  `yield`, `exit`
+- `base/user` — identity and environment: `addUser`, `removeUser`, `setUser`,
+  `currentUser`, `getUser`, `isRoot`, `getUid`, `getGid`, `getEnv`, `setEnv`
+- `base/proc` — the process table: `spawn`, `getTask`, `listTasks`, `kill`,
+  `reap`
+- `base/ipc` — userland message endpoints: `create`, `destroy`, `send`,
+  `receive`
+- `base/app` — application registry: `register`, `unregister`, `lookup`,
+  `list`, `run`, `spawn`
+- `base/std` — re-exports all of the above under one table
+
+`userapi.lua` is the composed facade the boot script and the shell use; it
+wraps the same calls, records the last failure for `:getError()`, and returns
+`true` or `(false, message)`. Lookups return `nil` when nothing matches.
+
+Each `base/*` module works in two places. Inside the kernel it forwards to the
+userland binding the kernel publishes (the `goth` table, built by
+`os/init/gothlib.c`), so scripts and the kernel share one set of tables. Under
+the standalone `build/lua` interpreter, or any host without the binding, it
+falls back to a pure-Lua equivalent, so the modules stay usable and testable on
+their own. `base/io.read` is line oriented: one console line with the trailing
+newline stripped, an empty string for a blank line, and `nil` at end of input.
+
+The C side of the binding lives in `rtos/userapi.c`
+(`include/gothrtos/userapi.h`) and mirrors the same operations for user
+programs written in C; the Lua modules are the primary API and the C library
+exists so `gothlib.c` and C user programs have something to call.
 
 ## Bare-metal ARM32 on QEMU
 

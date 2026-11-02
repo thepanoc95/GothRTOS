@@ -1,32 +1,39 @@
--- Userland API surface for the GothRTOS boot environment.
+-- GothRTOS userland API.
 --
--- The user-mode kernel does not create real processes yet. This module keeps
--- the identity, environment, and task bookkeeping that init scripts use, and
--- records spawn requests so a future process backend can consume them.
+-- This is the module the boot script and the shell talk to. It is a thin
+-- composition over the base/* OS API modules: identity and environment live in
+-- base/user, the process table in base/proc, endpoints in base/ipc, the clock
+-- in base/sys and the console in base/io. Those modules forward to the kernel
+-- binding when it is present and fall back to pure Lua otherwise, so this
+-- module behaves the same in the kernel and under the standalone interpreter.
+--
+-- Calls that can fail return true or (false, message); the failing call is also
+-- recorded and readable through :getError(). Lookups return nil when nothing
+-- matches.
 
---[[ local userapi = {
-    users = {},
-    current = "root",
-    environment = {},
-    tasks = {},
-    next_task_id = 1,
-    error = nil
+local io_api = require("base/io")
+local sys = require("base/sys")
+local user = require("base/user")
+local proc = require("base/proc")
+local ipc = require("base/ipc")
+
+local userapi = {
+    error = nil,
+    io = io_api,
+    sys = sys,
+    user = user,
+    proc = proc,
+    ipc = ipc
 }
 
-userapi.users.root = {
-    name = "root",
-    uid = 0,
-    gid = 0,
-    home = "/root",
-    shell = "/bin/sh"
-}
-
-userapi.environment = {
-    PATH = "/bin:/usr/bin",
-    HOME = userapi.users.root.home,
-    USER = userapi.users.root.name,
-    SHELL = userapi.users.root.shell
-}
+local function record(self, ok, message)
+    if ok == false then
+        self.error = message or "operation failed"
+    else
+        self.error = nil
+    end
+    return ok, message
+end
 
 function userapi:getError()
     return self.error
@@ -37,172 +44,137 @@ function userapi:setError(message)
     return self.error
 end
 
-function userapi:getUser(name)
-    if name == nil then
-        return self.users[self.current]
-    end
-    return self.users[name]
+-- Console ------------------------------------------------------------------
+function userapi:write(value)
+    return record(self, io_api.write(value))
 end
 
+function userapi:puts(value)
+    return record(self, io_api.puts(value))
+end
+
+function userapi:println(value)
+    return record(self, io_api.println(value))
+end
+
+function userapi:read()
+    return io_api.read()
+end
+
+-- Clock and task control ---------------------------------------------------
+function userapi:ticks()
+    return sys.ticks()
+end
+
+function userapi:timeNs()
+    return sys.timeNs()
+end
+
+function userapi:timeMs()
+    return sys.timeMs()
+end
+
+function userapi:sleep(ticks)
+    return record(self, sys.sleep(ticks))
+end
+
+function userapi:yield()
+    return record(self, sys.yield())
+end
+
+function userapi:exit(code)
+    return record(self, sys.exit(code))
+end
+
+-- Identity and environment -------------------------------------------------
 function userapi:currentUser()
-    return self.users[self.current]
+    return user.currentUser()
+end
+
+function userapi:getUser(name)
+    return user.getUser(name)
 end
 
 function userapi:setUser(name)
-    if type(name) ~= "string" or self.users[name] == nil then
-        return false, self:setError("unknown user: " .. tostring(name))
-    end
-
-    self.current = name
-    local user = self.users[name]
-    self.environment.USER = user.name
-    self.environment.HOME = user.home
-    self.environment.SHELL = user.shell
-    self.error = nil
-    return true
+    return record(self, user.setUser(name))
 end
 
 function userapi:addUser(name, uid, gid, home)
-    if type(name) ~= "string" or name == "" then
-        return false, self:setError("invalid user name")
-    end
-    if self.users[name] ~= nil then
-        return false, self:setError("user already exists: " .. name)
-    end
-    if type(uid) ~= "number" or type(gid) ~= "number" then
-        return false, self:setError("uid and gid must be numbers")
-    end
-
-    self.users[name] = {
-        name = name,
-        uid = uid,
-        gid = gid,
-        home = home or ("/home/" .. name),
-        shell = "/bin/sh"
-    }
-    self.error = nil
-    return true
+    return record(self, user.addUser(name, uid, gid, home))
 end
 
 function userapi:removeUser(name)
-    if name == "root" or name == self.current then
-        return false, self:setError("cannot remove the current user")
-    end
-    if self.users[name] == nil then
-        return false, self:setError("unknown user: " .. tostring(name))
-    end
-
-    self.users[name] = nil
-    self.error = nil
-    return true
+    return record(self, user.removeUser(name))
 end
 
 function userapi:isRoot()
-    local user = self:currentUser()
-    return user ~= nil and user.uid == 0
+    return user.isRoot()
 end
 
 function userapi:getUid()
-    local user = self:currentUser()
-    return user ~= nil and user.uid or nil
+    return user.getUid()
 end
 
 function userapi:getGid()
-    local user = self:currentUser()
-    return user ~= nil and user.gid or nil
+    return user.getGid()
 end
 
 function userapi:getEnv(key)
-    if type(key) ~= "string" or key == "" then
-        return nil
-    end
-    return self.environment[key]
+    return user.getEnv(key)
 end
 
 function userapi:setEnv(key, value)
-    if type(key) ~= "string" or key == "" then
-        return false, self:setError("invalid environment key")
-    end
-
-    if value == nil then
-        self.environment[key] = nil
-    else
-        self.environment[key] = tostring(value)
-    end
-    self.error = nil
-    return true
+    return record(self, user.setEnv(key, value))
 end
-]]
 
+-- Process table ------------------------------------------------------------
 function userapi:spawn(program, arguments)
-    if type(program) ~= "string" or program == "" then
-        return nil, self:setError("invalid program name")
+    local id, message = proc.spawn(program, arguments)
+    if id == nil then
+        self.error = message or "spawn failed"
+    else
+        self.error = nil
     end
-    if arguments ~= nil and type(arguments) ~= "table" then
-        return nil, self:setError("program arguments must be a table")
-    end
-
-    local id = self.next_task_id
-    self.next_task_id = id + 1
-    self.tasks[id] = {
-        id = id,
-        program = program,
-        arguments = arguments or {},
-        owner = self.current,
-        state = "ready"
-    }
-    self.error = nil
-    return id
+    return id, message
 end
 
 function userapi:getTask(id)
-    return self.tasks[id]
+    return proc.getTask(id)
 end
 
 function userapi:listTasks()
-    local copy = {}
-    local ids = {}
-
-    for id in pairs(self.tasks) do
-        ids[#ids + 1] = id
-    end
-    table.sort(ids)
-    for _, id in ipairs(ids) do
-        copy[#copy + 1] = self.tasks[id]
-    end
-    return copy
+    return proc.listTasks()
 end
 
 function userapi:kill(id)
-    local task = self.tasks[id]
-    if task == nil then
-        return false, self:setError("unknown task: " .. tostring(id))
-    end
-
-    task.state = "terminated"
-    task.exit_code = task.exit_code or 0
-    self.error = nil
-    return true
+    return record(self, proc.kill(id))
 end
 
 function userapi:reap(id)
-    local task = self.tasks[id]
-    if task == nil then
-        return false, self:setError("unknown task: " .. tostring(id))
-    end
-    if task.state ~= "terminated" then
-        return false, self:setError("task is still running: " .. tostring(id))
-    end
-
-    self.tasks[id] = nil
-    self.error = nil
-    return true
+    return record(self, proc.reap(id))
 end
 
-function userapi:createThread(name, id)
+-- Userland IPC -------------------------------------------------------------
+function userapi:endpointCreate()
+    local id, message = ipc.create()
+    if id == nil then
+        self.error = message or "could not create endpoint"
+    else
+        self.error = nil
+    end
+    return id, message
 end
-    
-function userapi:execvproc(pid)
+
+function userapi:endpointDestroy(id)
+    return record(self, ipc.destroy(id))
 end
-    
+
+function userapi:endpointSend(id, message_type, value0, value1)
+    return record(self, ipc.send(id, message_type, value0, value1))
+end
+
+function userapi:endpointReceive(id)
+    return ipc.receive(id)
+end
+
 return userapi
