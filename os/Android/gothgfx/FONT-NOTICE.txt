@@ -1,0 +1,22 @@
+The bitmap table in gothgfx_font.h is derived from the public-domain X11
+"8x13" console font distributed by the Debian/Ubuntu console-setup-linux
+package.
+
+The package's font copyright notice states:
+
+    All console fonts are public domain by nature.
+
+    == 7x14B.bdf 7x14Bc.bdf 7x14.bdf 7x14B-IL2.bdf 7x14c.bdf 7x14-IL2.bdf
+       8x13B.bdf 8x13Bc.bdf 8x13.bdf 8x13c.bdf 8x13-IL2.bdf 8x13O.bdf
+       9x15B.bdf 9x15Bc.bdf 9x15.bdf 9x15c.bdf 9x15-IL2.bdf
+       etl14-unicode.bdf etl16-unicode.bdf etl24-unicode.bdf
+
+    Public domain.  Donated (in unspecified order) by H. Kagotani
+    <kagotani@cs.titech.ac.jp>, BIZNET Poland, Inc., Dmitry
+    Yu. Bolkhovityanov <bolkhov@inp.nsk.su>, Thomas Bagli
+    <pyramid!pcsbst!tom@uunet.UU.NET>, PCS Computer Systeme - West
+    Germany, Takahashi N. <ntakahas@etl.go.jp>, Mark J. Reed
+    <mark_reed@sware.com>, P. Peterlin
+    <primoz.peterlin@biofiz.mf.uni-lj.si>, Mark Leisher
+    <mleisher@crl.nmsu.edu>, Roman Czyborra <czyborra@cs.tu-berlin.de>,
+    Kosta Kostis <kosta@live.robin.de> and others.

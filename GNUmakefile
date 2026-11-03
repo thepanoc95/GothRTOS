@@ -11,6 +11,7 @@ LIBC_CFLAGS ?= -std=c11 -ffreestanding -fno-builtin -static
 LUA_CPPFLAGS ?= -Ios/lua -Iinclude
 LUA_CFLAGS ?= -std=c11 -O2 -static
 LUA_LIBS ?= -lm
+GOTHGFX_CPPFLAGS ?= -Ios/Android/gothgfx
 GOTHC_LUA_CPPFLAGS ?= -Ilibc/include -Ios/lua -Iinclude -static
 GOTHC_LUA_CFLAGS ?= -std=c11 -O2 -ffreestanding -fno-builtin \
 	-fno-stack-protector -fno-pie -static
@@ -97,6 +98,7 @@ LUA_INTERPRETER_BINARY = $(BUILD_DIR)/lua
 LUAEXEC_OBJECT = $(BUILD_DIR)/os/init/luaexec.o
 GOTHLIB_OBJECT = $(BUILD_DIR)/os/init/gothlib.o
 LUAEXEC_TEST_BINARY = $(BUILD_DIR)/test_luaexec
+GOTHGFX_TEST_BINARY = $(BUILD_DIR)/test_gothgfx
 USERAPI_TEST_BINARY = $(BUILD_DIR)/test_userapi
 USERAPI_LUA_STAMP = $(BUILD_DIR)/.userapi_lua_stamp
 BIN_FMT_TEST_BINARY = $(BUILD_DIR)/test_95exc
@@ -173,7 +175,7 @@ ifndef V
 endif
 
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
-	rpi-zero run-rpi-zero test-rpi-zero
+	rpi-zero run-rpi-zero test-rpi-zero android-native
 
 all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNEL_BINARY)
 
@@ -196,6 +198,10 @@ run-rpi-zero: $(RPI_ELF)
 
 test-rpi-zero: $(RPI_ELF)
 	sh tests/run_rpi_qemu.sh $(RPI_ELF) $(RPI_BUILD_DIR)/qemu.log
+
+# Build the Android runtime (gothdroid + libgothgfx) with the NDK.
+android-native:
+	os/Android/build-native.sh
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
@@ -353,6 +359,15 @@ $(BIN_FMT_TEST_BINARY): tests/test_95exc.c $(LIBRARY) include/gothrtos/95exc.h |
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_95exc.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
+$(GOTHGFX_TEST_BINARY): tests/test_gothgfx.c tests/test_gothgfx.lua \
+		tests/test_systemui.lua \
+		os/Android/gothgfx/gothgfx.c os/Android/gothgfx/gothgfx.h \
+		os/Android/gothgfx/gothgfx_font.h $(LUA_LIBRARY) | $(BUILD_DIR)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
+	$(CC) $(LUA_CPPFLAGS) $(GOTHGFX_CPPFLAGS) $(CFLAGS) \
+		tests/test_gothgfx.c os/Android/gothgfx/gothgfx.c \
+		-L$(BUILD_DIR) -llua $(LUA_LIBS) -o $@
+
 $(FDT_TEST_BINARY): tests/test_fdt.c $(LIBRARY) include/gothrtos/fdt.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_fdt.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
@@ -369,7 +384,7 @@ $(USERAPI_LUA_STAMP): tests/test_userapi.lua $(KERNEL_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi lua binding tests..."
 	$(KERNEL_BINARY) -init=tests/test_userapi.lua -verbose=0
 
-test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
+test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(GOTHGFX_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
 	$(KLIB_TEST_COMMAND)
@@ -377,6 +392,9 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(LIBC_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running luaexec tests..."
 	$(LUAEXEC_TEST_BINARY)
+	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running gothgfx tests..."
+	$(GOTHGFX_TEST_BINARY) tests/test_gothgfx.lua
+	$(GOTHGFX_TEST_BINARY) tests/test_systemui.lua
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running binfmt tests..."
 	$(BIN_FMT_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running fdt tests..."

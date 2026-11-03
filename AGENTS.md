@@ -41,8 +41,14 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
 - `include/gothrtos/` — public headers. `userapi.h` is the userland surface.
 - `libkapi/kapi.c` — thin kernel API wrapper over the syscalls.
 - `pexpert/` — platform experts. `common.c` dispatches to per-platform ops
-  (`pexpert/um/pe_linux.c`, `pexpert/um/pe_w64.c`, `pexpert/arm/`). The ops
-  table lives in `pexpert/pe_internal.h`; add new ops to all three ports.
+  (`pexpert/um/pe_linux.c`, `pexpert/um/pe_w64.c`, `pexpert/arm/`,
+  `pexpert/android/pe_android.c`). The ops table lives in
+  `pexpert/pe_internal.h`; add new ops to every port.
+  `pe_android.c` also implements the UM scheduler contract with pthreads,
+  because bionic has no `makecontext`/`swapcontext`.
+- `os/Android/` — Android launcher, `gothdroid` (kernel-hosted runtime) and
+  `libgothgfx` (framebuffer/touch Lua module). Built by
+  `os/Android/build-native.sh` / `make android-native`, not by `GNUmakefile`.
 - `os/init/init.d/*.lua` — boot environment (`os.lua`, `path.lua`,
   `kernel_mounts.lua`, `kernelmode.lua`, `sh.lua`, `userapi.lua`).
 - `os/init/init.d/base/*.lua` — the GothRTOS userland OS API in Lua (`io`,

@@ -1,0 +1,15 @@
+# Gradle/Android build output
+/gothdroid/.gradle/
+/gothdroid/.kotlin/
+/gothdroid/.idea/
+/gothdroid/local.properties
+/gothdroid/build/
+/gothdroid/app/build/
+
+# Native build tree and staged binaries produced by build-native.sh.
+# They are packaged into the APK by Gradle, but are not checked in.
+/build/
+/prebuilt/
+
+# Windows download metadata
+*:Zone.Identifier
