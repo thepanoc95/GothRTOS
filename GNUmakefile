@@ -175,7 +175,7 @@ ifndef V
 endif
 
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
-	rpi-zero run-rpi-zero test-rpi-zero android-native
+	rpi-zero run-rpi-zero test-rpi-zero
 
 all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNEL_BINARY)
 
@@ -198,10 +198,6 @@ run-rpi-zero: $(RPI_ELF)
 
 test-rpi-zero: $(RPI_ELF)
 	sh tests/run_rpi_qemu.sh $(RPI_ELF) $(RPI_BUILD_DIR)/qemu.log
-
-# Build the Android runtime (gothdroid + libgothgfx) with the NDK.
-android-native:
-	os/Android/build-native.sh
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)

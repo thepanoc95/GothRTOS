@@ -1,0 +1,1 @@
+../os/init/init.d/sh.lua

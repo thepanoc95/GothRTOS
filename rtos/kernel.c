@@ -1,6 +1,8 @@
 #include "gothrtos/kernel.h"
 #include "um_internal.h"
 
+#include "version.h"
+
 static goth_task_t *task_list;
 static goth_task_t *current_task;
 static goth_task_t *last_scheduled;

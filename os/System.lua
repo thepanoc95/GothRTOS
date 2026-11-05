@@ -64,4 +64,14 @@ function System:halt(message)
     return true
 end
 
+
+--[[
+	@ System Modules portion
+	@ Injected via SysInject
+--]]
+
+local modules = {
+	"none"
+}
+
 return System

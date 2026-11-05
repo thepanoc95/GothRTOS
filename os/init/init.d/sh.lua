@@ -11,6 +11,7 @@
 -- this directory on package.path, but sh.lua can also be executed directly as
 -- an init script (-init=os/init/init.d/sh.lua), where it has to bootstrap the
 -- lookup path itself.
+local license = require("license")
 local function script_directory()
     local source = debug.getinfo(1, "S").source
     if source:sub(1, 1) == "@" then
@@ -343,6 +344,8 @@ function sh:run(directory)
 
     self.running = true
     println("OSShell " .. self.version .. " (type 'help' for commands)")
+    println("WARNING: This is alpha quality software, there will be a bunch of bugs, obviosly :P")
+    println("\n" .. license.license)
 
     while self.running do
         write(self.prompt)
