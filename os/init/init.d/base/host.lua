@@ -16,6 +16,11 @@ end
 
 host.bound = binding ~= nil
 
+-- Standalone fallback scheduler state. In the kernel the authoritative
+-- values live in the nanokernel and are read back through the binding.
+local fallback_scheduler = "preemptive"
+local fallback_quantum = 1
+
 local function forward(name, ...)
     local fn = binding[name]
     if fn == nil then
@@ -77,6 +82,85 @@ function host.exit(code)
         return forward("exit", code)
     end
     os.exit(code or 0)
+end
+
+-- Scheduler -------------------------------------------------------------
+function host.scheduler()
+    if binding then
+        return forward("scheduler") or "cooperative"
+    end
+    return fallback_scheduler
+end
+
+function host.setScheduler(mode)
+    if type(mode) ~= "string" then
+        return false, "scheduler mode must be a string"
+    end
+    if binding then
+        return forward("setScheduler", mode)
+    end
+    if mode ~= "preemptive" and mode ~= "cooperative" then
+        return false, "unknown scheduler mode: " .. mode
+    end
+    fallback_scheduler = mode
+    return true
+end
+
+function host.setPreempt(enabled)
+    if type(enabled) ~= "boolean" then
+        return false, "preemption flag must be a boolean"
+    end
+    if binding then
+        return forward("setPreempt", enabled)
+    end
+    fallback_scheduler = enabled and "preemptive" or "cooperative"
+    return true
+end
+
+function host.isPreempt()
+    return host.scheduler() == "preemptive"
+end
+
+function host.getQuantum()
+    if binding then
+        return forward("getQuantum") or 1
+    end
+    return fallback_quantum
+end
+
+function host.setQuantum(ticks)
+    if type(ticks) ~= "number" or ticks < 1 or ticks % 1 ~= 0 then
+        return false, "quantum must be a positive integer"
+    end
+    if binding then
+        return forward("setQuantum", ticks)
+    end
+    fallback_quantum = ticks
+    return true
+end
+
+function host.self()
+    if binding then
+        return forward("self")
+    end
+    return nil
+end
+
+function host.sysinfo()
+    if binding then
+        return forward("sysinfo")
+    end
+
+    return {
+        abi = 0,
+        scheduler = fallback_scheduler,
+        quantum = fallback_quantum,
+        ticks = host.ticks(),
+        tasks = 0,
+        processes = 0,
+        users = 0,
+        endpoints = 0
+    }
 end
 
 return host

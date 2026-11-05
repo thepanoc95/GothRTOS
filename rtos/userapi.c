@@ -1,6 +1,7 @@
 #include "gothrtos/userapi.h"
 
 #include "gothrtos/kernel.h"
+#include "gothrtos/mem.h"
 #include "gothrtos/pexpert.h"
 #include "gothrtos/syscall.h"
 
@@ -56,16 +57,26 @@ static bool userapi_equals(const char *first, const char *second)
     return first[index] == second[index];
 }
 
+static goth_syscall_result_t userapi_syscall(uint32_t number,
+                                             uintptr_t argument0,
+                                             uintptr_t argument1,
+                                             uintptr_t argument2,
+                                             uintptr_t argument3)
+{
+    goth_syscall_request_t request = {0};
+
+    request.number = number;
+    request.arguments[0] = argument0;
+    request.arguments[1] = argument1;
+    request.arguments[2] = argument2;
+    request.arguments[3] = argument3;
+    return goth_syscall_dispatch(&request);
+}
+
 static goth_status_t userapi_task_call(uint32_t number,
                                        uintptr_t argument)
 {
-    goth_syscall_request_t request = {0};
-    goth_syscall_result_t result;
-
-    request.number = number;
-    request.arguments[0] = argument;
-    result = goth_syscall_dispatch(&request);
-    return result.status;
+    return userapi_syscall(number, argument, 0U, 0U, 0U).status;
 }
 
 static goth_user_t *userapi_user_at(goth_userapi_t *userapi, size_t index)
@@ -108,6 +119,17 @@ static goth_env_entry_t *userapi_find_env(goth_userapi_t *userapi,
     return NULL;
 }
 
+static void userapi_reset_process(goth_process_t *process)
+{
+    process->id = 0U;
+    process->task_id = 0U;
+    process->owner = 0U;
+    process->state = GOTH_PROCESS_UNUSED;
+    process->exit_code = 0;
+    process->start_ticks = 0U;
+    process->program[0] = '\0';
+}
+
 void goth_userapi_init(goth_userapi_t *userapi)
 {
     size_t index;
@@ -130,11 +152,7 @@ void goth_userapi_init(goth_userapi_t *userapi)
         userapi->users[index].shell[0] = '\0';
     }
     for (index = 0U; index < GOTH_USERAPI_MAX_PROCESSES; index++) {
-        userapi->processes[index].id = 0U;
-        userapi->processes[index].owner = 0U;
-        userapi->processes[index].state = GOTH_PROCESS_UNUSED;
-        userapi->processes[index].exit_code = 0;
-        userapi->processes[index].program[0] = '\0';
+        userapi_reset_process(&userapi->processes[index]);
     }
     for (index = 0U; index < GOTH_USERAPI_MAX_ENV; index++) {
         userapi->environment[index].key[0] = '\0';
@@ -154,6 +172,15 @@ void goth_userapi_init(goth_userapi_t *userapi)
     (void)goth_userapi_set_env(userapi, "HOME", "/root");
     (void)goth_userapi_set_env(userapi, "USER", "root");
     (void)goth_userapi_set_env(userapi, "SHELL", "/bin/sh");
+
+    /* The userland tables are reachable from the syscall gate, but they are
+     * not kernel memory: mark them as a shared user range so the protection
+     * layer can enforce that distinction. A duplicate registration (repeated
+     * init, or an init before the kernel) is harmless. */
+    (void)goth_mem_register(userapi, sizeof(*userapi),
+                            GOTH_MEM_READ | GOTH_MEM_WRITE |
+                                GOTH_MEM_USER_ACCESS,
+                            GOTH_MEM_USER, 0U, "userapi tables");
 }
 
 goth_status_t goth_userapi_console_write(goth_userapi_t *userapi,
@@ -219,7 +246,6 @@ goth_status_t goth_userapi_exit(goth_userapi_t *userapi, int code)
 
 goth_status_t goth_userapi_get_ticks(goth_userapi_t *userapi, uint64_t *ticks)
 {
-    goth_syscall_request_t request = {0};
     goth_syscall_result_t result;
 
     (void)userapi;
@@ -227,8 +253,7 @@ goth_status_t goth_userapi_get_ticks(goth_userapi_t *userapi, uint64_t *ticks)
         return GOTH_STATUS_INVALID_ARGUMENT;
     }
 
-    request.number = GOTH_SYSCALL_KERNEL_TICKS;
-    result = goth_syscall_dispatch(&request);
+    result = userapi_syscall(GOTH_SYSCALL_KERNEL_TICKS, 0U, 0U, 0U, 0U);
     if (result.status == GOTH_STATUS_OK) {
         *ticks = result.value;
     }
@@ -247,6 +272,111 @@ goth_status_t goth_userapi_time_ns(goth_userapi_t *userapi, uint64_t *time_ns)
     status = goth_pe_time_ns(time_ns);
     return status == GOTH_PE_STATUS_OK ? GOTH_STATUS_OK
                                        : GOTH_STATUS_PLATFORM_ERROR;
+}
+
+goth_status_t goth_userapi_set_scheduler(goth_userapi_t *userapi,
+                                         goth_sched_policy_t policy)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    if (policy != GOTH_SCHED_COOPERATIVE &&
+        policy != GOTH_SCHED_PREEMPTIVE) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    result = userapi_syscall(GOTH_SYSCALL_KERNEL_SET_SCHED,
+                             (uintptr_t)policy, 0U, 0U, 0U);
+    return result.status;
+}
+
+goth_status_t goth_userapi_set_preemptive(goth_userapi_t *userapi,
+                                          bool enabled)
+{
+    return goth_userapi_set_scheduler(userapi,
+                                      enabled ? GOTH_SCHED_PREEMPTIVE
+                                              : GOTH_SCHED_COOPERATIVE);
+}
+
+goth_sched_policy_t goth_userapi_scheduler(const goth_userapi_t *userapi)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    result = userapi_syscall(GOTH_SYSCALL_KERNEL_GET_SCHED, 0U, 0U, 0U, 0U);
+    if (result.status != GOTH_STATUS_OK) {
+        return GOTH_SCHED_COOPERATIVE;
+    }
+    return result.value == GOTH_SCHED_PREEMPTIVE ? GOTH_SCHED_PREEMPTIVE
+                                                 : GOTH_SCHED_COOPERATIVE;
+}
+
+bool goth_userapi_is_preemptive(const goth_userapi_t *userapi)
+{
+    return goth_userapi_scheduler(userapi) == GOTH_SCHED_PREEMPTIVE;
+}
+
+goth_status_t goth_userapi_set_quantum(goth_userapi_t *userapi,
+                                       uint32_t ticks)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    if (ticks == 0U) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    result = userapi_syscall(GOTH_SYSCALL_KERNEL_SET_QUANTUM, ticks,
+                             0U, 0U, 0U);
+    return result.status;
+}
+
+uint32_t goth_userapi_quantum(const goth_userapi_t *userapi)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    result = userapi_syscall(GOTH_SYSCALL_KERNEL_GET_QUANTUM, 0U, 0U, 0U, 0U);
+    return result.status == GOTH_STATUS_OK ? (uint32_t)result.value : 1U;
+}
+
+goth_status_t goth_userapi_system_info(goth_userapi_t *userapi,
+                                       goth_system_info_t *info)
+{
+    goth_syscall_result_t result;
+    size_t index;
+
+    if (userapi == NULL || info == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+
+    info->abi_version = GOTH_USERAPI_ABI_VERSION;
+    info->scheduler = goth_userapi_scheduler(userapi);
+    info->quantum = goth_userapi_quantum(userapi);
+    info->ticks = 0U;
+    (void)goth_userapi_get_ticks(userapi, &info->ticks);
+
+    result = userapi_syscall(GOTH_SYSCALL_KERNEL_TASK_COUNT, 0U, 0U, 0U, 0U);
+    info->tasks = result.status == GOTH_STATUS_OK ? (size_t)result.value : 0U;
+    info->processes = userapi->process_count;
+    info->users = userapi->user_count;
+    info->endpoints = 0U;
+    for (index = 0U; index < GOTH_USERAPI_MAX_ENDPOINTS; index++) {
+        if (userapi->endpoint_used[index]) {
+            info->endpoints++;
+        }
+    }
+    return GOTH_STATUS_OK;
+}
+
+goth_task_id_t goth_userapi_self(const goth_userapi_t *userapi)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    result = userapi_syscall(GOTH_SYSCALL_TASK_SELF, 0U, 0U, 0U, 0U);
+    if (result.status != GOTH_STATUS_OK || result.value > UINT32_MAX) {
+        return 0U;
+    }
+    return (goth_task_id_t)result.value;
 }
 
 goth_status_t goth_userapi_add_user(goth_userapi_t *userapi,
@@ -275,7 +405,6 @@ goth_status_t goth_userapi_add_user(goth_userapi_t *userapi,
         (void)userapi_copy(user->home, sizeof(user->home), home);
     } else {
         (void)userapi_copy(user->home, sizeof(user->home), "/home/");
-        /* Append the name after "/home/". */
         {
             size_t base = userapi_length(user->home);
             size_t index = 0U;
@@ -431,6 +560,7 @@ goth_status_t goth_userapi_spawn(goth_userapi_t *userapi,
     }
 
     process = &userapi->processes[index];
+    userapi_reset_process(process);
     process->id = userapi->next_process_id++;
     if (userapi->next_process_id == 0U) {
         userapi->next_process_id = 1U;
@@ -439,6 +569,8 @@ goth_status_t goth_userapi_spawn(goth_userapi_t *userapi,
     process->owner = owner != NULL ? owner->uid : 0U;
     process->state = GOTH_PROCESS_READY;
     process->exit_code = 0;
+    process->task_id = 0U;
+    (void)goth_userapi_get_ticks(userapi, &process->start_ticks);
     (void)userapi_copy(process->program, sizeof(process->program), program);
     userapi->process_count++;
 
@@ -484,6 +616,51 @@ goth_status_t goth_userapi_set_process_state(goth_userapi_t *userapi,
     return GOTH_STATUS_OK;
 }
 
+goth_status_t goth_userapi_attach_process(goth_userapi_t *userapi,
+                                          goth_task_id_t id,
+                                          goth_task_id_t task_id)
+{
+    goth_process_t *process = goth_userapi_get_process(userapi, id);
+
+    if (process == NULL) {
+        return GOTH_STATUS_EMPTY;
+    }
+    process->task_id = task_id;
+    return GOTH_STATUS_OK;
+}
+
+goth_status_t goth_userapi_set_exit_code(goth_userapi_t *userapi,
+                                         goth_task_id_t id,
+                                         int code)
+{
+    goth_process_t *process = goth_userapi_get_process(userapi, id);
+
+    if (process == NULL) {
+        return GOTH_STATUS_EMPTY;
+    }
+    process->exit_code = code;
+    process->state = GOTH_PROCESS_TERMINATED;
+    return GOTH_STATUS_OK;
+}
+
+goth_status_t goth_userapi_wait(goth_userapi_t *userapi,
+                                goth_task_id_t id,
+                                int *exit_code)
+{
+    const goth_process_t *process = goth_userapi_find_process(userapi, id);
+
+    if (process == NULL) {
+        return GOTH_STATUS_EMPTY;
+    }
+    if (process->state != GOTH_PROCESS_TERMINATED) {
+        return GOTH_STATUS_WOULD_BLOCK;
+    }
+    if (exit_code != NULL) {
+        *exit_code = process->exit_code;
+    }
+    return GOTH_STATUS_OK;
+}
+
 goth_status_t goth_userapi_kill(goth_userapi_t *userapi, goth_task_id_t id)
 {
     goth_process_t *process = goth_userapi_get_process(userapi, id);
@@ -511,10 +688,7 @@ goth_status_t goth_userapi_reap(goth_userapi_t *userapi, goth_task_id_t id)
     for (; index + 1U < GOTH_USERAPI_MAX_PROCESSES; index++) {
         userapi->processes[index] = userapi->processes[index + 1U];
     }
-    userapi->processes[GOTH_USERAPI_MAX_PROCESSES - 1U].state =
-        GOTH_PROCESS_UNUSED;
-    userapi->processes[GOTH_USERAPI_MAX_PROCESSES - 1U].id = 0U;
-    userapi->processes[GOTH_USERAPI_MAX_PROCESSES - 1U].program[0] = '\0';
+    userapi_reset_process(&userapi->processes[GOTH_USERAPI_MAX_PROCESSES - 1U]);
     userapi->process_count--;
     return GOTH_STATUS_OK;
 }
@@ -625,4 +799,201 @@ goth_status_t goth_userapi_endpoint_receive(goth_userapi_t *userapi,
         return GOTH_STATUS_INVALID_ARGUMENT;
     }
     return goth_endpoint_receive(endpoint, message);
+}
+
+goth_status_t goth_userapi_endpoint_poll(goth_userapi_t *userapi,
+                                         uint32_t id,
+                                         goth_message_t *message)
+{
+    goth_endpoint_t *endpoint = userapi_endpoint_at(userapi, id);
+
+    if (endpoint == NULL) {
+        return GOTH_STATUS_EMPTY;
+    }
+    if (message == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    return goth_endpoint_poll(endpoint, message);
+}
+
+size_t goth_userapi_endpoint_count(const goth_userapi_t *userapi)
+{
+    size_t index;
+    size_t count = 0U;
+
+    if (userapi == NULL) {
+        return 0U;
+    }
+    for (index = 0U; index < GOTH_USERAPI_MAX_ENDPOINTS; index++) {
+        if (userapi->endpoint_used[index]) {
+            count++;
+        }
+    }
+    return count;
+}
+
+goth_status_t goth_userapi_fs_open(goth_userapi_t *userapi,
+                                   const char *path,
+                                   uint32_t flags,
+                                   uint32_t *fd)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    if (path == NULL || fd == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    result = userapi_syscall(GOTH_SYSCALL_VFS_OPEN, (uintptr_t)path, flags,
+                             0U, 0U);
+    if (result.status == GOTH_STATUS_OK) {
+        if (result.value > UINT32_MAX) {
+            return GOTH_STATUS_BAD_STATE;
+        }
+        *fd = (uint32_t)result.value;
+    }
+    return result.status;
+}
+
+goth_status_t goth_userapi_fs_close(goth_userapi_t *userapi, uint32_t fd)
+{
+    (void)userapi;
+    return userapi_syscall(GOTH_SYSCALL_VFS_CLOSE, fd, 0U, 0U, 0U).status;
+}
+
+goth_status_t goth_userapi_fs_read(goth_userapi_t *userapi,
+                                   uint32_t fd,
+                                   void *buffer,
+                                   size_t capacity,
+                                   size_t *read_length)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    if (read_length == NULL || (buffer == NULL && capacity != 0U)) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    result = userapi_syscall(GOTH_SYSCALL_VFS_READ, fd, (uintptr_t)buffer,
+                             capacity, 0U);
+    if (result.status == GOTH_STATUS_OK) {
+        if (result.value > (uint64_t)(size_t)-1) {
+            return GOTH_STATUS_BAD_STATE;
+        }
+        *read_length = (size_t)result.value;
+    }
+    return result.status;
+}
+
+goth_status_t goth_userapi_fs_write(goth_userapi_t *userapi,
+                                    uint32_t fd,
+                                    const void *data,
+                                    size_t length,
+                                    size_t *written)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    if (written == NULL || (data == NULL && length != 0U)) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    result = userapi_syscall(GOTH_SYSCALL_VFS_WRITE, fd, (uintptr_t)data,
+                             length, 0U);
+    if (result.status == GOTH_STATUS_OK) {
+        if (result.value > (uint64_t)(size_t)-1) {
+            return GOTH_STATUS_BAD_STATE;
+        }
+        *written = (size_t)result.value;
+    }
+    return result.status;
+}
+
+goth_status_t goth_userapi_fs_seek(goth_userapi_t *userapi,
+                                   uint32_t fd,
+                                   int64_t offset,
+                                   goth_vfs_whence_t whence,
+                                   uint64_t *position)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    result = userapi_syscall(GOTH_SYSCALL_VFS_SEEK, fd, (uintptr_t)offset,
+                             (uintptr_t)whence, 0U);
+    if (result.status == GOTH_STATUS_OK && position != NULL) {
+        *position = result.value;
+    }
+    return result.status;
+}
+
+goth_status_t goth_userapi_fs_truncate(goth_userapi_t *userapi,
+                                       uint32_t fd,
+                                       uint64_t size)
+{
+    (void)userapi;
+    return userapi_syscall(GOTH_SYSCALL_VFS_TRUNCATE, fd, (uintptr_t)size,
+                           0U, 0U).status;
+}
+
+goth_status_t goth_userapi_fs_stat(goth_userapi_t *userapi,
+                                   const char *path,
+                                   goth_vfs_stat_t *stat)
+{
+    (void)userapi;
+    if (path == NULL || stat == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    return userapi_syscall(GOTH_SYSCALL_VFS_STAT, (uintptr_t)path,
+                           (uintptr_t)stat, 0U, 0U).status;
+}
+
+goth_status_t goth_userapi_fs_mkdir(goth_userapi_t *userapi,
+                                    const char *path)
+{
+    (void)userapi;
+    if (path == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    return userapi_syscall(GOTH_SYSCALL_VFS_MKDIR, (uintptr_t)path, 0U, 0U,
+                           0U).status;
+}
+
+goth_status_t goth_userapi_fs_unlink(goth_userapi_t *userapi,
+                                     const char *path)
+{
+    (void)userapi;
+    if (path == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    return userapi_syscall(GOTH_SYSCALL_VFS_UNLINK, (uintptr_t)path, 0U, 0U,
+                           0U).status;
+}
+
+goth_status_t goth_userapi_fs_readdir(goth_userapi_t *userapi,
+                                      const char *path,
+                                      uint32_t index,
+                                      goth_vfs_dirent_t *entry)
+{
+    (void)userapi;
+    if (path == NULL || entry == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    return userapi_syscall(GOTH_SYSCALL_VFS_READDIR, (uintptr_t)path, index,
+                           (uintptr_t)entry, 0U).status;
+}
+
+goth_status_t goth_userapi_fs_usage(goth_userapi_t *userapi,
+                                    uint32_t *used_blocks,
+                                    uint32_t *total_blocks)
+{
+    goth_syscall_result_t result;
+
+    (void)userapi;
+    result = userapi_syscall(GOTH_SYSCALL_VFS_USAGE, 0U, 0U, 0U, 0U);
+    if (result.status == GOTH_STATUS_OK) {
+        if (used_blocks != NULL) {
+            *used_blocks = (uint32_t)(result.value >> 32);
+        }
+        if (total_blocks != NULL) {
+            *total_blocks = (uint32_t)(result.value & UINT32_MAX);
+        }
+    }
+    return result.status;
 }

@@ -69,4 +69,20 @@ function ipc.receive(id)
     return table.remove(queue, 1)
 end
 
+function ipc.poll(id)
+    if host.bound then
+        return goth.endpointPoll(id)
+    end
+    local queue = state.endpoints[id]
+    if queue == nil or #queue == 0 then
+        return nil
+    end
+    return queue[1]
+end
+
+function ipc.count(id)
+    local queue = state.endpoints[id]
+    return queue ~= nil and #queue or 0
+end
+
 return ipc

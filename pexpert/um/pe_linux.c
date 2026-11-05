@@ -7,16 +7,21 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdlib.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
 
 typedef struct {
     ucontext_t context;
+    void *mapping;
     void *stack;
     size_t stack_size;
+    bool guard_page;
 } goth_um_linux_context_t;
 
 #if UINTPTR_MAX > UINT32_MAX
@@ -42,6 +47,9 @@ static pid_t goth_um_linux_thread_id(void)
 #endif
 }
 
+static void goth_um_linux_preempt_block(void);
+static void goth_um_linux_preempt_unblock(void);
+
 static void goth_um_linux_task_entry(unsigned int low, unsigned int high)
 {
     uintptr_t value = (uintptr_t)low;
@@ -56,7 +64,9 @@ static void goth_um_linux_task_entry(unsigned int low, unsigned int high)
 
     task = (goth_task_t *)value;
     context = (goth_um_linux_context_t *)task->port_context;
+    goth_um_linux_preempt_unblock();
     task->entry(task->argument);
+    goth_um_linux_preempt_block();
     (void)goth_task_exit();
 
     for (;;) {
@@ -73,7 +83,7 @@ static void goth_um_linux_release_context(goth_task_t *task)
     }
 
     context = (goth_um_linux_context_t *)task->port_context;
-    free(context->stack);
+    free(context->mapping);
     free(context);
     task->port_context = NULL;
 }
@@ -102,6 +112,82 @@ static void goth_um_linux_sleep_ms(uint32_t milliseconds)
             break;
         }
     }
+}
+
+/* Preemptive preemption for user mode.
+ *
+ * The kernel exposes goth_kernel_tick() as the only scheduling entry point a
+ * platform timer needs. On Linux we drive it from an interval timer. The
+ * handler refuses to run while the scheduler is manipulating its own state;
+ * a lost tick is harmless because the next one is only a millisecond away.
+ * The timer is stopped whenever the run loop parks because no task is ready,
+ * which keeps the host's saved context valid. */
+static volatile sig_atomic_t preempt_timer_active;
+
+static void goth_um_linux_preempt_block(void)
+{
+    sigset_t mask;
+
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGALRM);
+    (void)sigprocmask(SIG_BLOCK, &mask, NULL);
+}
+
+static void goth_um_linux_preempt_unblock(void)
+{
+    sigset_t mask;
+
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGALRM);
+    (void)sigprocmask(SIG_UNBLOCK, &mask, NULL);
+}
+
+static void goth_um_linux_preempt_handler(int signal_number)
+{
+    (void)signal_number;
+
+    if (!um_running || !preempt_timer_active ||
+        !goth_kernel_async_preempt_enabled() ||
+        !goth_kernel_preempt_allowed()) {
+        return;
+    }
+
+    (void)goth_kernel_tick();
+}
+
+static goth_status_t goth_um_linux_preempt_start(uint32_t period_ms)
+{
+    struct sigaction action = {0};
+    struct itimerval timer = {{0, 0}, {0, 0}};
+    long milliseconds = period_ms > 0U ? (long)period_ms : 1L;
+
+    action.sa_handler = goth_um_linux_preempt_handler;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_RESTART;
+    if (sigaction(SIGALRM, &action, NULL) != 0) {
+        return GOTH_STATUS_PLATFORM_ERROR;
+    }
+
+    timer.it_interval.tv_sec = milliseconds / 1000L;
+    timer.it_interval.tv_usec = (milliseconds % 1000L) * 1000L;
+    timer.it_value = timer.it_interval;
+    preempt_timer_active = 1;
+    if (setitimer(ITIMER_REAL, &timer, NULL) != 0) {
+        preempt_timer_active = 0;
+        return GOTH_STATUS_PLATFORM_ERROR;
+    }
+    return GOTH_STATUS_OK;
+}
+
+static void goth_um_linux_preempt_stop(void)
+{
+    struct itimerval timer = {{0, 0}, {0, 0}};
+
+    if (!preempt_timer_active) {
+        return;
+    }
+    preempt_timer_active = 0;
+    (void)setitimer(ITIMER_REAL, &timer, NULL);
 }
 
 goth_status_t goth_um_platform_init(void)
@@ -139,10 +225,18 @@ goth_status_t goth_um_platform_reset(goth_task_t *tasks)
     return GOTH_STATUS_OK;
 }
 
+static size_t goth_um_linux_page_size(void)
+{
+    long page = sysconf(_SC_PAGESIZE);
+
+    return page > 0 ? (size_t)page : 4096U;
+}
+
 goth_status_t goth_um_task_create(goth_task_t *task)
 {
     goth_um_linux_context_t *context;
     size_t stack_size;
+    size_t page_size;
 
     if (task == NULL) {
         return GOTH_STATUS_INVALID_ARGUMENT;
@@ -161,15 +255,37 @@ goth_status_t goth_um_task_create(goth_task_t *task)
     if (context == NULL) {
         return GOTH_STATUS_PLATFORM_ERROR;
     }
-    context->stack = malloc(stack_size);
-    if (context->stack == NULL) {
-        free(context);
-        return GOTH_STATUS_PLATFORM_ERROR;
+
+    /* Put a PROT_NONE page below the host stack. An overflow then faults in
+     * the host process instead of silently corrupting its neighbour. If the
+     * alignment or mprotect call is unavailable, fall back to a plain heap
+     * stack; the canary still catches the low-water mark. */
+    page_size = goth_um_linux_page_size();
+    stack_size = (stack_size + page_size - 1U) & ~(page_size - 1U);
+    context->mapping = NULL;
+    if (posix_memalign(&context->mapping, page_size,
+                       stack_size + page_size) == 0) {
+        if (mprotect(context->mapping, page_size, PROT_NONE) == 0) {
+            context->stack = (uint8_t *)context->mapping + page_size;
+            context->guard_page = true;
+        } else {
+            free(context->mapping);
+            context->mapping = NULL;
+        }
+    }
+    if (context->mapping == NULL) {
+        context->mapping = malloc(stack_size);
+        if (context->mapping == NULL) {
+            free(context);
+            return GOTH_STATUS_PLATFORM_ERROR;
+        }
+        context->stack = context->mapping;
+        context->guard_page = false;
     }
     context->stack_size = stack_size;
 
     if (getcontext(&context->context) != 0) {
-        free(context->stack);
+        free(context->mapping);
         free(context);
         return GOTH_STATUS_PLATFORM_ERROR;
     }
@@ -204,6 +320,42 @@ goth_status_t goth_um_task_destroy(goth_task_t *task)
     return GOTH_STATUS_OK;
 }
 
+goth_status_t goth_um_task_guard(goth_task_t *task)
+{
+    goth_um_linux_context_t *context;
+    uint32_t *words;
+
+    if (task == NULL || task->port_context == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    context = (goth_um_linux_context_t *)task->port_context;
+    if (context->stack == NULL || context->stack_size < 8U) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+
+    words = (uint32_t *)context->stack;
+    words[0] = GOTH_UM_GUARD_WORD;
+    words[1] = GOTH_UM_GUARD_WORD ^ GOTH_UM_GUARD_XOR;
+    return GOTH_STATUS_OK;
+}
+
+bool goth_um_task_guard_valid(goth_task_t *task)
+{
+    goth_um_linux_context_t *context;
+    const uint32_t *words;
+
+    if (task == NULL || task->port_context == NULL) {
+        return false;
+    }
+    context = (goth_um_linux_context_t *)task->port_context;
+    if (context->stack == NULL || context->stack_size < 8U) {
+        return false;
+    }
+    words = (const uint32_t *)context->stack;
+    return words[0] == GOTH_UM_GUARD_WORD &&
+           words[1] == (GOTH_UM_GUARD_WORD ^ GOTH_UM_GUARD_XOR);
+}
+
 void goth_um_context_switch(goth_task_t *previous, goth_task_t *next)
 {
     goth_um_linux_context_t *previous_context;
@@ -233,7 +385,9 @@ void goth_um_context_switch(goth_task_t *previous, goth_task_t *next)
     if (destination == source) {
         return;
     }
+    goth_um_linux_preempt_block();
     (void)swapcontext(source, destination);
+    goth_um_linux_preempt_unblock();
 }
 
 bool goth_um_is_running(void)
@@ -288,9 +442,15 @@ goth_status_t goth_um_run(uint32_t tick_period_ms)
     }
 
     um_running = true;
+    goth_um_linux_preempt_block();
     goth_um_start_clock(tick_period_ms);
+    if (goth_kernel_async_preempt_enabled()) {
+        (void)goth_um_linux_preempt_start(tick_period_ms);
+    }
     for (;;) {
         if (goth_kernel_schedule() == NULL) {
+            goth_um_linux_preempt_stop();
+            goth_um_linux_preempt_block();
             if (!goth_kernel_has_sleeping_tasks()) {
                 break;
             }
@@ -307,8 +467,13 @@ goth_status_t goth_um_run(uint32_t tick_period_ms)
                     (void)goth_kernel_tick();
                 }
             }
+            if (goth_kernel_async_preempt_enabled()) {
+                (void)goth_um_linux_preempt_start(tick_period_ms);
+            }
         }
     }
+    goth_um_linux_preempt_stop();
+    goth_um_linux_preempt_unblock();
     um_running = false;
     return GOTH_STATUS_OK;
 }

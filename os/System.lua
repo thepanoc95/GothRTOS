@@ -5,7 +5,13 @@ local System = {
     build = "indev",
     booted = false,
     error = nil,
-    root = "/"
+    root = "/",
+
+    -- Scheduler policy read by the boot pipeline. PREEMPT=False selects
+    -- cooperative multitasking; true (the default) selects preemptive
+    -- scheduling with the quantum below.
+    PREEMPT = true,
+    quantum = 1
 }
 
 function System:getVersion()
@@ -41,6 +47,14 @@ function System:isBooted()
     return self.booted == true
 end
 
+function System:isPreemptive()
+    return self.PREEMPT ~= false
+end
+
+function System:getQuantum()
+    return self.quantum or 1
+end
+
 function System:boot()
     if self.booted then
         return true
@@ -65,13 +79,18 @@ function System:halt(message)
 end
 
 
---[[
-	@ System Modules portion
-	@ Injected via SysInject
---]]
+-- System modules ---------------------------------------------------------
+-- SysInject replaces the region between these markers with module source
+-- before System.lua is compiled. A module can append its own name/record to
+-- `modules` and can extend the System table directly.
 
-local modules = {
-	"none"
-}
+local modules = {}
+
+-- @sysinject:require scheduler
+
+-- @sysinject:begin
+-- @sysinject:end
+
+System.modules = modules
 
 return System

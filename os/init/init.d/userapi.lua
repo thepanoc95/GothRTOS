@@ -16,6 +16,7 @@ local sys = require("base/sys")
 local user = require("base/user")
 local proc = require("base/proc")
 local ipc = require("base/ipc")
+local sched = require("base/sched")
 
 local userapi = {
     error = nil,
@@ -23,7 +24,8 @@ local userapi = {
     sys = sys,
     user = user,
     proc = proc,
-    ipc = ipc
+    ipc = ipc,
+    sched = sched
 }
 
 local function record(self, ok, message)
@@ -84,6 +86,39 @@ end
 
 function userapi:exit(code)
     return record(self, sys.exit(code))
+end
+
+-- Scheduler ----------------------------------------------------------------
+function userapi:getScheduler()
+    return sched.getMode()
+end
+
+function userapi:setScheduler(mode)
+    return record(self, sched.setMode(mode))
+end
+
+function userapi:setPreempt(enabled)
+    return record(self, sched.setPreempt(enabled))
+end
+
+function userapi:isPreemptive()
+    return sched.isPreemptive()
+end
+
+function userapi:getQuantum()
+    return sched.getQuantum()
+end
+
+function userapi:setQuantum(ticks)
+    return record(self, sched.setQuantum(ticks))
+end
+
+function userapi:sysinfo()
+    return sched.info()
+end
+
+function userapi:self()
+    return proc.self()
 end
 
 -- Identity and environment -------------------------------------------------
@@ -154,6 +189,16 @@ function userapi:reap(id)
     return record(self, proc.reap(id))
 end
 
+function userapi:wait(id)
+    local ok, result = proc.wait(id)
+    if ok then
+        self.error = nil
+    else
+        self.error = result or "wait failed"
+    end
+    return ok, result
+end
+
 -- Userland IPC -------------------------------------------------------------
 function userapi:endpointCreate()
     local id, message = ipc.create()
@@ -175,6 +220,10 @@ end
 
 function userapi:endpointReceive(id)
     return ipc.receive(id)
+end
+
+function userapi:endpointPoll(id)
+    return ipc.poll(id)
 end
 
 return userapi

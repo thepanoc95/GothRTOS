@@ -11,7 +11,6 @@ LIBC_CFLAGS ?= -std=c11 -ffreestanding -fno-builtin -static
 LUA_CPPFLAGS ?= -Ios/lua -Iinclude
 LUA_CFLAGS ?= -std=c11 -O2 -static
 LUA_LIBS ?= -lm
-GOTHGFX_CPPFLAGS ?= -Ios/Android/gothgfx
 GOTHC_LUA_CPPFLAGS ?= -Ilibc/include -Ios/lua -Iinclude -static
 GOTHC_LUA_CFLAGS ?= -std=c11 -O2 -ffreestanding -fno-builtin \
 	-fno-stack-protector -fno-pie -static
@@ -59,7 +58,9 @@ else
 $(error UM_PLATFORM must be "linux" or "windows")
 endif
 
-SOURCES = rtos/kernel.c rtos/ipc.c rtos/syscall.c rtos/userapi.c pexpert/common.c $(UM_PLATFORM_SOURCE) os/init/95exc.binfmt.c os/loader/fdt.c os/loader/cmdline.c
+SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c rtos/userapi.c \
+	rtos/klog.c rtos/mem.c rtos/vfs.c pexpert/common.c $(UM_PLATFORM_SOURCE) \
+	os/init/95exc.binfmt.c os/loader/fdt.c os/loader/cmdline.c
 OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 KAPI_OBJECT = $(BUILD_DIR)/libkapi/kapi.o
 KLIB_SOURCES = kalloc.c kbarena.c keigen.c kexpr.c kmath.c kmempool.c knhx.c ksa.c kson.c kstring.c ksw.c kthread.c
@@ -98,7 +99,6 @@ LUA_INTERPRETER_BINARY = $(BUILD_DIR)/lua
 LUAEXEC_OBJECT = $(BUILD_DIR)/os/init/luaexec.o
 GOTHLIB_OBJECT = $(BUILD_DIR)/os/init/gothlib.o
 LUAEXEC_TEST_BINARY = $(BUILD_DIR)/test_luaexec
-GOTHGFX_TEST_BINARY = $(BUILD_DIR)/test_gothgfx
 USERAPI_TEST_BINARY = $(BUILD_DIR)/test_userapi
 USERAPI_LUA_STAMP = $(BUILD_DIR)/.userapi_lua_stamp
 BIN_FMT_TEST_BINARY = $(BUILD_DIR)/test_95exc
@@ -116,7 +116,8 @@ ARM_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic \
 ARM_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/arm32.ld \
 	-Wl,--gc-sections -Wl,-Map=$(ARM_BUILD_DIR)/kern.map
 ARM_LIBS ?= -lgcc
-ARM_C_SOURCES = rtos/kernel.c rtos/ipc.c rtos/syscall.c pexpert/common.c \
+ARM_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
+	rtos/klog.c rtos/mem.c rtos/vfs.c pexpert/common.c \
 	pexpert/arm/pe_arm32.c pexpert/arm/pe_arm32_qemu.c \
 	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
 ARM_ASM_SOURCES = pexpert/arm/arm32_start.S
@@ -126,7 +127,8 @@ ARM_ELF = $(ARM_BUILD_DIR)/kern.elf
 ARM_BIN = $(ARM_BUILD_DIR)/kern.bin
 ARM_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
 	include/gothrtos/um.h include/gothrtos/arm32.h \
-	pexpert/pe_internal.h pexpert/arm/um_internal.h pexpert/arm/pe_arm32.h
+	include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h \
+	rtos/kinternal.h pexpert/pe_internal.h pexpert/arm/um_internal.h pexpert/arm/pe_arm32.h
 QEMU_ARM ?= qemu-system-arm
 QEMU_ARM_FLAGS ?= -M virt -cpu cortex-a15 -m 128M -nographic \
 	-semihosting-config enable=on,target=native
@@ -147,7 +149,8 @@ RPI_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic \
 RPI_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/bcm2835.ld \
 	-Wl,--gc-sections -Wl,-Map=$(RPI_BUILD_DIR)/kernel.map
 RPI_LIBS ?= -lgcc
-RPI_C_SOURCES = rtos/kernel.c rtos/ipc.c rtos/syscall.c pexpert/common.c \
+RPI_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
+	rtos/klog.c rtos/mem.c rtos/vfs.c pexpert/common.c \
 	pexpert/arm/pe_arm32.c pexpert/arm/pe_bcm2835.c \
 	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
 RPI_ASM_SOURCES = pexpert/arm/arm32_start.S
@@ -244,7 +247,7 @@ $(RPI_IMG): $(RPI_ELF)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
 	$(RPI_OBJCOPY) -O binary $< $@
 
-$(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h rtos/kinternal.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
@@ -258,11 +261,11 @@ $(LIBRARY): $(OBJECTS) $(UM_PLATFORM_STAMP)
 	@rm -f $@
 	$(AR) rcs $@ $(OBJECTS)
 
-$(KERNEL_BINARY): os/loader/kern.c $(LIBRARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(LUA_LIBRARY) include/gothrtos/cmdline.h include/gothrtos/kernel.h include/gothrtos/luaexec.h include/gothrtos/gothlib.h include/gothrtos/userapi.h include/gothrtos/pexpert.h include/gothrtos/um.h | $(BUILD_DIR)
+$(KERNEL_BINARY): os/loader/kern.c $(LIBRARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(LUA_LIBRARY) include/gothrtos/cmdline.h include/gothrtos/kernel.h include/gothrtos/luaexec.h include/gothrtos/gothlib.h include/gothrtos/userapi.h include/gothrtos/pexpert.h include/gothrtos/um.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) os/loader/kern.c $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) -L$(BUILD_DIR) -lgothrtos -llua $(LUA_LIBS) $(UM_PLATFORM_LIBS) -o $@
 
-$(KAPI_OBJECT): libkapi/kapi.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/kapi.h | $(BUILD_DIR)
+$(KAPI_OBJECT): libkapi/kapi.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/kapi.h include/gothrtos/vfs.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
@@ -325,12 +328,12 @@ $(LUAEXEC_OBJECT): os/init/luaexec.c include/gothrtos/luaexec.h os/lua/lua.h os/
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(LUA_CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-$(GOTHLIB_OBJECT): os/init/gothlib.c include/gothrtos/gothlib.h include/gothrtos/userapi.h os/lua/lua.h os/lua/lauxlib.h | $(BUILD_DIR)
+$(GOTHLIB_OBJECT): os/init/gothlib.c include/gothrtos/gothlib.h include/gothrtos/userapi.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h os/lua/lua.h os/lua/lauxlib.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(LUA_CPPFLAGS) $(CFLAGS) -c $< -o $@
 
-$(TEST_BINARY): tests/test_kernel.c $(LIBRARY) $(KAPI_LIBRARY) include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/kapi.h include/gothrtos/um.h include/gothrtos/pexpert.h | $(BUILD_DIR)
+$(TEST_BINARY): tests/test_kernel.c $(LIBRARY) $(KAPI_LIBRARY) include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/kapi.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_kernel.c -L$(BUILD_DIR) -lkapi -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
@@ -355,15 +358,6 @@ $(BIN_FMT_TEST_BINARY): tests/test_95exc.c $(LIBRARY) include/gothrtos/95exc.h |
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_95exc.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
-$(GOTHGFX_TEST_BINARY): tests/test_gothgfx.c tests/test_gothgfx.lua \
-		tests/test_systemui.lua \
-		os/Android/gothgfx/gothgfx.c os/Android/gothgfx/gothgfx.h \
-		os/Android/gothgfx/gothgfx_font.h $(LUA_LIBRARY) | $(BUILD_DIR)
-	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
-	$(CC) $(LUA_CPPFLAGS) $(GOTHGFX_CPPFLAGS) $(CFLAGS) \
-		tests/test_gothgfx.c os/Android/gothgfx/gothgfx.c \
-		-L$(BUILD_DIR) -llua $(LUA_LIBS) -o $@
-
 $(FDT_TEST_BINARY): tests/test_fdt.c $(LIBRARY) include/gothrtos/fdt.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_fdt.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
@@ -372,7 +366,7 @@ $(CMDLINE_TEST_BINARY): tests/test_cmdline.c $(LIBRARY) include/gothrtos/cmdline
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_cmdline.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
-$(USERAPI_TEST_BINARY): tests/test_userapi.c $(LIBRARY) include/gothrtos/userapi.h include/gothrtos/kernel.h include/gothrtos/pexpert.h include/gothrtos/syscall.h | $(BUILD_DIR)
+$(USERAPI_TEST_BINARY): tests/test_userapi.c $(LIBRARY) include/gothrtos/userapi.h include/gothrtos/kernel.h include/gothrtos/pexpert.h include/gothrtos/syscall.h include/gothrtos/vfs.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_userapi.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
@@ -380,7 +374,7 @@ $(USERAPI_LUA_STAMP): tests/test_userapi.lua $(KERNEL_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi lua binding tests..."
 	$(KERNEL_BINARY) -init=tests/test_userapi.lua -verbose=0
 
-test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(GOTHGFX_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
+test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
 	$(KLIB_TEST_COMMAND)
@@ -388,9 +382,6 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(LIBC_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running luaexec tests..."
 	$(LUAEXEC_TEST_BINARY)
-	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running gothgfx tests..."
-	$(GOTHGFX_TEST_BINARY) tests/test_gothgfx.lua
-	$(GOTHGFX_TEST_BINARY) tests/test_systemui.lua
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running binfmt tests..."
 	$(BIN_FMT_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running fdt tests..."

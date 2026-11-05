@@ -1,5 +1,6 @@
 #include "gothrtos/arm32.h"
 #include "gothrtos/kernel.h"
+#include "gothrtos/klog.h"
 #include "gothrtos/pexpert.h"
 #include "gothrtos/um.h"
 
@@ -35,23 +36,6 @@ static void print_u32(uint32_t value)
 
     while (value > 0U) {
         buffer[--position] = (char)('0' + (value % 10U));
-        value /= 10U;
-    }
-    (void)goth_pe_console_write(&buffer[position], sizeof(buffer) - position);
-}
-
-static void print_u64(uint64_t value)
-{
-    char buffer[20];
-    size_t position = sizeof(buffer);
-
-    if (value == 0U) {
-        print_text("0");
-        return;
-    }
-
-    while (value > 0U) {
-        buffer[--position] = (char)('0' + (uint32_t)(value % 10U));
         value /= 10U;
     }
     (void)goth_pe_console_write(&buffer[position], sizeof(buffer) - position);
@@ -115,22 +99,21 @@ void kmain(void)
         goth_arm32_exit(1);
     }
 
-    print_text("\nGothRTOS ARM32 bare-metal boot\n");
+    goth_klog_init();
+    goth_klog_set_console_level(GOTH_LOG_INFO);
 
+    goth_klog_printf(GOTH_LOG_INFO, "GothRTOS ARM32 bare-metal boot");
     if (goth_pe_get_info(&info) != GOTH_PE_STATUS_OK) {
-        print_text("arm32: cannot query platform information\n");
+        goth_klog_printf(GOTH_LOG_ERR,
+                         "arm32: cannot query platform information");
         goth_arm32_exit(1);
     }
 
-    print_text("platform: ");
-    print_text(info.platform_name);
-    print_text("\narchitecture: ");
-    print_text(info.architecture);
-    print_text(", ");
-    print_u32(info.pointer_width);
-    print_text("-bit, cpus: ");
-    print_u32(info.logical_cpu_count);
-    print_text("\n");
+    goth_klog_printf(GOTH_LOG_INFO, "platform: %s", info.platform_name);
+    goth_klog_printf(GOTH_LOG_INFO,
+                     "architecture: %s, %u-bit, cpus: %u",
+                     info.architecture, (unsigned int)info.pointer_width,
+                     (unsigned int)info.logical_cpu_count);
 
     goth_kernel_init();
     if (!goth_kernel_is_initialized()) {
@@ -141,17 +124,15 @@ void kmain(void)
     start_task(&task_a, task_a_stack, 2U, task_a_entry);
     start_task(&task_b, task_b_stack, 1U, task_b_entry);
 
-    print_text("arm32: scheduler starting\n");
+    goth_klog_printf(GOTH_LOG_INFO, "arm32: scheduler starting");
     status = goth_um_run(1U);
     if (status != GOTH_STATUS_OK) {
-        print_text("arm32: scheduler failed: ");
-        print_u32((uint32_t)status);
-        print_text("\n");
+        goth_klog_printf(GOTH_LOG_ERR, "arm32: scheduler failed: %u",
+                         (unsigned int)status);
         goth_arm32_exit(1);
     }
 
-    print_text("arm32: kernel halted after ");
-    print_u64(goth_kernel_ticks());
-    print_text(" tick(s)\n");
+    goth_klog_printf(GOTH_LOG_INFO, "arm32: kernel halted after %llu tick(s)",
+                     (unsigned long long)goth_kernel_ticks());
     goth_arm32_exit(0);
 }

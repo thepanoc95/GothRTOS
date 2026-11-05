@@ -36,6 +36,18 @@ local mounts = require("kernel_mounts")
 local kernelfs = require("kernelmode")
 local shell = require("sh")
 local userland = require("userapi")
+local sysinject = require("sysinject")
+local sched = require("base/sched")
+
+local function read_host_file(candidate)
+    local handle = io.open(candidate, "r")
+    if handle == nil then
+        return nil
+    end
+    local source = handle:read("*a")
+    handle:close()
+    return source
+end
 
 local function read_system_source(kernelfs_module)
     local candidates = {
@@ -48,11 +60,7 @@ local function read_system_source(kernelfs_module)
     for _, candidate in ipairs(candidates) do
         local source = kernelfs_module:readFile(candidate)
         if source == nil then
-            local handle = io.open(candidate, "r")
-            if handle ~= nil then
-                source = handle:read("*a")
-                handle:close()
-            end
+            source = read_host_file(candidate)
         end
 
         if source ~= nil then
@@ -62,25 +70,79 @@ local function read_system_source(kernelfs_module)
     return nil, nil
 end
 
+local function read_system_module(name, kernelfs_module)
+    local candidates = {
+        "/kern/init.d/modules/" .. name .. ".lua",
+        here .. "/modules/" .. name .. ".lua",
+        "os/init/init.d/modules/" .. name .. ".lua",
+        "os/modules/" .. name .. ".lua"
+    }
+
+    for _, candidate in ipairs(candidates) do
+        local source = kernelfs_module:readFile(candidate)
+        if source == nil then
+            source = read_host_file(candidate)
+        end
+        if source ~= nil then
+            return source, candidate
+        end
+    end
+    return nil, "module not found: " .. name
+end
+
 local function load_system(kernelfs_module)
     local source, source_name = read_system_source(kernelfs_module)
     if source == nil then
         error("OSBoot: cannot find System.lua", 0)
     end
 
-    local chunk, load_error = load(source, "@" .. source_name)
-    if chunk == nil then
-        error("OSBoot: cannot load System.lua: " .. tostring(load_error), 0)
+    local extra_modules = {}
+    local configured = base:getOption("sysmodules")
+    if type(configured) == "string" then
+        for name in configured:gmatch("[^,]+") do
+            extra_modules[#extra_modules + 1] = name
+        end
     end
 
-    local system = chunk()
-    if type(system) ~= "table" then
-        error("OSBoot: System.lua did not return a module table", 0)
+    local system, load_error = sysinject.load(source, {
+        modules = extra_modules,
+        chunk_name = "@" .. source_name,
+        load_module = function(name)
+            return read_system_module(name, kernelfs_module)
+        end
+    })
+    if system == nil then
+        error("OSBoot: cannot load System.lua: " .. tostring(load_error), 0)
     end
 
     package.loaded["System"] = system
     package.loaded["kern/init.d/sys/System"] = system
     return system
+end
+
+local function apply_scheduler(system)
+    local config
+    if type(system.getSchedulerConfig) == "function" then
+        config = system:getSchedulerConfig()
+    else
+        config = {
+            mode = system.PREEMPT ~= false and "preemptive" or "cooperative",
+            quantum = system.quantum or 1
+        }
+    end
+
+    local ok, message = sched.setMode(config.mode)
+    if not ok then
+        return false, message
+    end
+    ok, message = sched.setQuantum(config.quantum or 1)
+    if not ok then
+        return false, message
+    end
+
+    print("OSBoot: scheduler=" .. sched.getMode() ..
+          " quantum=" .. tostring(sched.getQuantum()))
+    return true
 end
 
 local function declare_mounts()
@@ -126,6 +188,14 @@ function main()
     if not System:boot() then
         print("OSBoot: boot failed: " .. tostring(System:getError()))
         base:halt(System:getError())
+        return false
+    end
+
+    local sched_ok, sched_error = apply_scheduler(System)
+    if not sched_ok then
+        print("OSBoot: scheduler setup failed: " .. tostring(sched_error))
+        System:setError(sched_error)
+        base:halt(sched_error)
         return false
     end
 

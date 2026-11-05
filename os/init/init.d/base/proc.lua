@@ -98,4 +98,38 @@ function proc.reap(id)
     return true
 end
 
+function proc.wait(id)
+    if host.bound then
+        local ok, result = goth.wait(id)
+        if ok == true then
+            return true, result
+        end
+        return false, result
+    end
+
+    local task = state.tasks[id]
+    if task == nil then
+        return false, "unknown task: " .. tostring(id)
+    end
+    if task.state ~= "terminated" then
+        return false, "task is still running: " .. tostring(id)
+    end
+    return true, task.exit_code or 0
+end
+
+function proc.self()
+    if host.bound then
+        return goth.self()
+    end
+    return nil
+end
+
+function proc.count()
+    local total = 0
+    for _ in pairs(state.tasks) do
+        total = total + 1
+    end
+    return total
+end
+
 return proc

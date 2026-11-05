@@ -10,13 +10,15 @@ local sys = require("base/sys")
 local user = require("base/user")
 local proc = require("base/proc")
 local ipc = require("base/ipc")
+local sched = require("base/sched")
 
 local std = {
     io = io_api,
     sys = sys,
     user = user,
     proc = proc,
-    ipc = ipc
+    ipc = ipc,
+    sched = sched
 }
 
 -- Console.
@@ -36,6 +38,16 @@ std.sleep = sys.sleep
 std.yield = sys.yield
 std.exit = sys.exit
 
+-- Scheduler policy.
+std.scheduler = sched.getMode
+std.setScheduler = sched.setMode
+std.setPreempt = sched.setPreempt
+std.isPreemptive = sched.isPreemptive
+std.getQuantum = sched.getQuantum
+std.setQuantum = sched.setQuantum
+std.self = sched.self
+std.sysinfo = sched.info
+
 -- Identity and environment.
 std.currentUser = user.currentUser
 std.getUser = user.getUser
@@ -52,12 +64,16 @@ std.getTask = proc.getTask
 std.listTasks = proc.listTasks
 std.kill = proc.kill
 std.reap = proc.reap
+std.wait = proc.wait
+std.taskSelf = proc.self
 
 -- Userland IPC.
 std.endpointCreate = ipc.create
 std.endpointDestroy = ipc.destroy
 std.endpointSend = ipc.send
 std.endpointReceive = ipc.receive
+std.endpointPoll = ipc.poll
+std.endpointCount = ipc.count
 
 -- Filesystem helpers backed by the host's io library.
 function std.exists(path)

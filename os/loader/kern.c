@@ -1,5 +1,6 @@
 #include "gothrtos/cmdline.h"
 #include "gothrtos/kernel.h"
+#include "gothrtos/klog.h"
 #include "gothrtos/luaexec.h"
 #include "gothrtos/pexpert.h"
 #include "gothrtos/um.h"
@@ -70,7 +71,7 @@ static bool run_init_script(const goth_cmdline_t *cmdline)
     }
 
     if (kernel_verbose) {
-        printf("kern.ldr: running init script %s\n", script);
+        goth_klog_printf(GOTH_LOG_DEBUG, "Running init script %s", script);
     }
     lua_status = goth_lua_exec_file(script, (int)cmdline->count, lua_arguments);
     if (lua_status != GOTH_LUA_OK) {
@@ -141,8 +142,9 @@ static void boot_task_entry(void *argument)
     const goth_cmdline_t *cmdline = (const goth_cmdline_t *)argument;
 
     if (kernel_verbose) {
-        printf("kern.ldr: boot task started with %zu option(s)\n",
-               cmdline->count);
+        goth_klog_printf(GOTH_LOG_DEBUG,
+                         "Boot task started with %zu option(s)",
+                         cmdline->count);
     }
     (void)goth_task_exit();
 }
@@ -180,33 +182,41 @@ int main(int argument_count, char *arguments[])
         return 1;
     }
 
-    printf("GothRTOS kernel: %s, %s, %u-bit\n",
-           platform_info.platform_name,
-           platform_info.architecture,
-           (unsigned int)platform_info.pointer_width);
-
-    if (kernel_verbose) {
-        printf("kern.ldr: %u logical CPU(s), debug mask 0x%x\n",
-               (unsigned int)platform_info.logical_cpu_count,
-               (unsigned int)debug);
-        for (index = 0U; index < cmdline.count; index++) {
-            const goth_cmdline_option_t *option = &cmdline.options[index];
-
-            if (option->value != NULL) {
-                printf("kern.ldr: option %.*s=%.*s\n",
-                       (int)option->key_length, option->key,
-                       (int)option->value_length, option->value);
-            } else {
-                printf("kern.ldr: option %.*s\n",
-                       (int)option->key_length, option->key);
-            }
-        }
-    }
+    /* Bring the kernel log up before anything else so the whole boot
+     * sequence, including later subsystem probes, shares one timeline. */
+    goth_klog_init();
+    goth_klog_set_console_level(kernel_verbose ? GOTH_LOG_DEBUG
+                                               : GOTH_LOG_INFO);
 
     goth_kernel_init();
     if (!goth_kernel_is_initialized()) {
         fprintf(stderr, "kern.ldr: kernel initialization failed\n");
         return 1;
+    }
+
+    if (cmdline.count > 0U) {
+        goth_klog_printf(GOTH_LOG_INFO, "Command line: %zu option(s)",
+                         cmdline.count);
+    } else {
+        goth_klog_printf(GOTH_LOG_INFO, "Command line: (none)");
+    }
+    for (index = 0U; index < cmdline.count; index++) {
+        const goth_cmdline_option_t *option = &cmdline.options[index];
+
+        if (option->value != NULL) {
+            goth_klog_printf(GOTH_LOG_DEBUG, "  option %.*s=%.*s",
+                             (int)option->key_length, option->key,
+                             (int)option->value_length, option->value);
+        } else {
+            goth_klog_printf(GOTH_LOG_DEBUG, "  option %.*s",
+                             (int)option->key_length, option->key);
+        }
+    }
+    if (kernel_verbose) {
+        goth_klog_printf(GOTH_LOG_DEBUG,
+                         "Platform has %u logical CPU(s), debug mask 0x%x",
+                         (unsigned int)platform_info.logical_cpu_count,
+                         (unsigned int)debug);
     }
 
     if (!run_init_script(&cmdline)) {
@@ -228,9 +238,7 @@ int main(int argument_count, char *arguments[])
         return 1;
     }
 
-    if (kernel_verbose) {
-        printf("kern.ldr: halted after %llu tick(s)\n",
-               (unsigned long long)goth_kernel_ticks());
-    }
+    goth_klog_printf(GOTH_LOG_INFO, "Kernel halted after %llu tick(s)",
+                     (unsigned long long)goth_kernel_ticks());
     return 0;
 }

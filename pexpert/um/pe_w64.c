@@ -106,6 +106,31 @@ goth_status_t goth_um_task_destroy(goth_task_t *task)
     return GOTH_STATUS_OK;
 }
 
+goth_status_t goth_um_task_guard(goth_task_t *task)
+{
+    uint32_t *words;
+
+    if (task == NULL || task->stack == NULL || task->stack_size < 8U) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    words = (uint32_t *)task->stack;
+    words[0] = GOTH_UM_GUARD_WORD;
+    words[1] = GOTH_UM_GUARD_WORD ^ GOTH_UM_GUARD_XOR;
+    return GOTH_STATUS_OK;
+}
+
+bool goth_um_task_guard_valid(goth_task_t *task)
+{
+    const uint32_t *words;
+
+    if (task == NULL || task->stack == NULL || task->stack_size < 8U) {
+        return false;
+    }
+    words = (const uint32_t *)task->stack;
+    return words[0] == GOTH_UM_GUARD_WORD &&
+           words[1] == (GOTH_UM_GUARD_WORD ^ GOTH_UM_GUARD_XOR);
+}
+
 void goth_um_context_switch(goth_task_t *previous, goth_task_t *next)
 {
     LPVOID destination;
