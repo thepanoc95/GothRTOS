@@ -1,5 +1,8 @@
 #include <stdio.h>
+
+#if defined(_TARGET_PICO_SDK_)
 #include "pico/stdlib.h"
+#endif
 
 // #include "version.h"
 #define loader_version "0.0.1-alpha"
