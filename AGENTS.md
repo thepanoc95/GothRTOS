@@ -78,6 +78,8 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
   the port scaffolder; `buildui/runner.py` wraps `make`. Neither imports
   Textual, so the registry is usable from scripts. `python OSBuild.py --list`
   and `--list-ports` print the same data headlessly.
+  When adding a board or port, add a `Board` entry (and, for a new port,
+  teach `discover_ports` its architecture) so the UI can see it.
 
 ## Conventions
 
@@ -114,5 +116,3 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
   introspection, port scaffolder, make runner). Runs under `make test` via
   `$(PYTHON)`; the Textual app smoke test is skipped when Textual is absent.
 
-When adding a board or port, update `buildui/registry.py` so the UI can see
-it: a `Board` entry plus, for a new port, the `discover_ports` classification.
