@@ -338,7 +338,7 @@ class NewPortScreen(Screen):
 class MainActivity(App):
     CSS_PATH = CSS_PATH
     TITLE = "GothRTOS System Builder"
-    SUB_TITLE = "boards, ports and builds"
+    SUB_TITLE = "just build it bruh"
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
     ]
