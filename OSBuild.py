@@ -1,39 +1,61 @@
-from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header, TextArea, Label, Button, Static, Footer
-from rich.style import Style
-from textual.widgets.text_area import TextAreaTheme
-from textual import events
-from textual.containers import Horizontal, VerticalScroll
-# from tree_sitter_languages import get_language
-import pyfiglet
-from textual.binding import Binding
+"""GothRTOS System Builder — the build system UI.
 
-monakai = TextAreaTheme.get_builtin_theme("monakai")
-#lua_lang = get_language("lua")
+Command line front end. The board/device data and the make runner live in the
+``buildui`` package, and the Textual screens live in ``buildui.ui`` (imported
+lazily, so ``--list`` and ``--list-ports`` work without Textual installed).
 
-class ExtendedTextArea(TextArea):
-    def _on_key(self, event: events.Key) -> None:
-        if event.character == "(":
-            self.insert("()")
-            self.move_cursor_relative(columns=-1)
-            event.prevent_default()
+    python OSBuild.py              # start the interactive UI
+    python OSBuild.py --list       # list boards, ports and devices
+    python OSBuild.py --list-ports # list the ports found under pexpert/
+
+Or use ``make build-ui``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from buildui import registry
 
 
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="GothRTOS build system UI")
+    parser.add_argument("--list", action="store_true",
+                        help="list boards and exit")
+    parser.add_argument("--list-ports", action="store_true",
+                        help="list discovered ports and exit")
+    args = parser.parse_args(argv)
 
-class MainActivity(App):
-    CSS_PATH = "OSBuild.tcss"
+    if args.list:
+        registry.list_boards()
+        return 0
+    if args.list_ports:
+        registry.list_ports()
+        return 0
 
-    def compose(self) -> ComposeResult:
-        title = pyfiglet.figlet_format("GothRTOS System Builder", font="slant")
+    try:
+        from buildui.ui import MainActivity
+    except ModuleNotFoundError as error:
+        print(f"the interactive UI needs Textual: {error}\n"
+              "install it with: pip install textual pyfiglet",
+              file=sys.stderr)
+        return 2
 
-        yield Label(title)
-        yield Horizontal(
-            Button("Get Started", variant="primary"),
-            Button("Board/Port list", disabled=True),
-            Button.error("Close", id="CloseAppBtn")
-        )
-#        yield Footer()
-app = MainActivity()
+    MainActivity().run()
+    return 0
+
+
+def __getattr__(name: str):
+    """Lazily expose the UI classes (``OSBuild.MainActivity`` and friends)."""
+    if name in {"MainActivity", "WelcomeScreen", "BoardsScreen",
+                "BoardDetailScreen", "PortsScreen", "NewPortScreen",
+                "banner"}:
+        from buildui import ui
+
+        return getattr(ui, name)
+    raise AttributeError(name)
+
 
 if __name__ == "__main__":
-    app.run()
+    sys.exit(main())

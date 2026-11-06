@@ -111,6 +111,8 @@ HDF_TEST_BINARY = $(BUILD_DIR)/test_hdf
 SPARSE_TEST_BINARY = $(BUILD_DIR)/test_sparsekernel
 SYSGOTH_TEST_BINARY = $(BUILD_DIR)/test_sysgoth
 SPARSEKERNEL_GEN = $(BUILD_DIR)/sparsekernel-gen
+PYTHON ?= python3
+BUILDUI_TEST = tests/test_buildui.py
 KERNEL_BINARY = $(BUILD_DIR)/kern.ldr
 ARM_CC ?= arm-none-eabi-gcc
 ARM_OBJCOPY ?= arm-none-eabi-objcopy
@@ -266,7 +268,8 @@ endif
 
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
 	rpi-zero run-rpi-zero test-rpi-zero amd64 run-amd64 test-amd64 \
-	pico pico2
+	pico pico2 \
+	build-ui
 
 all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY)
 
@@ -301,6 +304,10 @@ test-amd64: $(AMD64_BIN)
 pico: $(PICO_ELF) $(PICO_IMG3)
 
 pico2: $(PICO2_ELF) $(PICO2_IMG3)
+
+# Launch the build system UI (needs textual; pip install textual pyfiglet).
+build-ui:
+	$(PYTHON) OSBuild.py
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
@@ -606,6 +613,8 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(KERNEL_BINARY) -init=tests/test_kernlib.lua -verbose=0
 	$(LUA_INTERPRETER_BINARY) tests/test_userkernel.lua
 	$(KERNEL_BINARY) -init=tests/test_userkernel.lua -verbose=0
+	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running build system UI tests..."
+	$(PYTHON) $(BUILDUI_TEST)
 
 clean:
 	@printf "  $(COLOR_RM)%-12s$(RESET) %s\n" "RM" "$(BUILD_DIR)"
