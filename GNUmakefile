@@ -59,8 +59,10 @@ $(error UM_PLATFORM must be "linux" or "windows")
 endif
 
 SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c rtos/userapi.c \
-	rtos/klog.c rtos/mem.c rtos/vfs.c pexpert/common.c $(UM_PLATFORM_SOURCE) \
-	os/init/95exc.binfmt.c os/loader/fdt.c os/loader/cmdline.c
+	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+	pexpert/common.c $(UM_PLATFORM_SOURCE) \
+	os/init/95exc.binfmt.c os/loader/fdt.c os/loader/cmdline.c \
+	os/loader/sparsekernel.c
 OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 KAPI_OBJECT = $(BUILD_DIR)/libkapi/kapi.o
 KLIB_SOURCES = kalloc.c kbarena.c keigen.c kexpr.c kmath.c kmempool.c knhx.c ksa.c kson.c kstring.c ksw.c kthread.c
@@ -104,6 +106,10 @@ USERAPI_LUA_STAMP = $(BUILD_DIR)/.userapi_lua_stamp
 BIN_FMT_TEST_BINARY = $(BUILD_DIR)/test_95exc
 FDT_TEST_BINARY = $(BUILD_DIR)/test_fdt
 CMDLINE_TEST_BINARY = $(BUILD_DIR)/test_cmdline
+HDF_TEST_BINARY = $(BUILD_DIR)/test_hdf
+SPARSE_TEST_BINARY = $(BUILD_DIR)/test_sparsekernel
+SYSGOTH_TEST_BINARY = $(BUILD_DIR)/test_sysgoth
+SPARSEKERNEL_GEN = $(BUILD_DIR)/sparsekernel-gen
 KERNEL_BINARY = $(BUILD_DIR)/kern.ldr
 ARM_CC ?= arm-none-eabi-gcc
 ARM_OBJCOPY ?= arm-none-eabi-objcopy
@@ -247,7 +253,7 @@ $(RPI_IMG): $(RPI_ELF)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
 	$(RPI_OBJCOPY) -O binary $< $@
 
-$(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h rtos/kinternal.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h include/gothrtos/nanokernel.h include/gothrtos/hdf.h include/gothrtos/sparsekernel.h rtos/kinternal.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
@@ -366,6 +372,22 @@ $(CMDLINE_TEST_BINARY): tests/test_cmdline.c $(LIBRARY) include/gothrtos/cmdline
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_cmdline.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
+$(HDF_TEST_BINARY): tests/test_hdf.c $(LIBRARY) include/gothrtos/hdf.h | $(BUILD_DIR)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_hdf.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
+
+$(SPARSE_TEST_BINARY): tests/test_sparsekernel.c $(LIBRARY) include/gothrtos/sparsekernel.h | $(BUILD_DIR)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_sparsekernel.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
+
+$(SYSGOTH_TEST_BINARY): tests/test_sysgoth.c sysgoth/sysgoth.c os/loader/sparsekernel.c include/gothrtos/sparsekernel.h sysgoth/sysgoth.h | $(BUILD_DIR)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
+	$(CC) $(CPPFLAGS) $(CFLAGS) -Isysgoth tests/test_sysgoth.c sysgoth/sysgoth.c os/loader/sparsekernel.c $(UM_PLATFORM_LIBS) -o $@
+
+$(SPARSEKERNEL_GEN): tools/sparsekernel_gen.c os/loader/sparsekernel.c include/gothrtos/sparsekernel.h | $(BUILD_DIR)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
+	$(CC) $(CPPFLAGS) $(CFLAGS) tools/sparsekernel_gen.c os/loader/sparsekernel.c $(UM_PLATFORM_LIBS) -o $@
+
 $(USERAPI_TEST_BINARY): tests/test_userapi.c $(LIBRARY) include/gothrtos/userapi.h include/gothrtos/kernel.h include/gothrtos/pexpert.h include/gothrtos/syscall.h include/gothrtos/vfs.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_userapi.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
@@ -374,7 +396,7 @@ $(USERAPI_LUA_STAMP): tests/test_userapi.lua $(KERNEL_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi lua binding tests..."
 	$(KERNEL_BINARY) -init=tests/test_userapi.lua -verbose=0
 
-test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
+test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
 	$(KLIB_TEST_COMMAND)
@@ -388,6 +410,12 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(FDT_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running cmdline tests..."
 	$(CMDLINE_TEST_BINARY)
+	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running hdf tests..."
+	$(HDF_TEST_BINARY)
+	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running sparsekernel tests..."
+	$(SPARSE_TEST_BINARY)
+	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running sysgoth tests..."
+	$(SYSGOTH_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi tests..."
 	$(USERAPI_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running system runtime smoke tests..."

@@ -30,4 +30,9 @@ goth_pe_status_t goth_pe_console_read(char *buffer,
                                       size_t capacity,
                                       size_t *read_length);
 
+/* Registers the platform's hardware devices with the HDF. A port without a
+ * device model leaves the hook unset, and this then succeeds without doing
+ * anything. */
+goth_pe_status_t goth_pe_register_hardware(void);
+
 #endif

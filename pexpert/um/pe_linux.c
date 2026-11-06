@@ -606,7 +606,8 @@ const goth_pe_platform_ops_t *goth_pe_platform_get_ops(void)
         goth_pe_linux_initialize,
         goth_pe_linux_time_ns,
         goth_pe_linux_console_write,
-        goth_pe_linux_console_read
+        goth_pe_linux_console_read,
+        NULL
     };
 
     return &platform_ops;

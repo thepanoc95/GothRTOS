@@ -80,3 +80,16 @@ goth_pe_status_t goth_pe_console_read(char *buffer,
     *read_length = 0U;
     return platform_ops->console_read(buffer, capacity, read_length);
 }
+
+goth_pe_status_t goth_pe_register_hardware(void)
+{
+    if (!initialized) {
+        return GOTH_PE_STATUS_NOT_INITIALIZED;
+    }
+    /* The device model is optional: user-mode ports and minimal boards have
+     * none, and that is not an error. */
+    if (platform_ops->hdf_register == NULL) {
+        return GOTH_PE_STATUS_OK;
+    }
+    return platform_ops->hdf_register();
+}

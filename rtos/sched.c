@@ -2,6 +2,7 @@
 
 #include "gothrtos/klog.h"
 #include "gothrtos/mem.h"
+#include "gothrtos/nanokernel.h"
 #include "kinternal.h"
 #include "um_internal.h"
 
@@ -299,8 +300,18 @@ goth_task_t *goth_kernel_schedule(void)
     if (task_list == NULL) {
         last_scheduled = NULL;
         scheduler_critical = false;
+        /* The last task left the ready set: the nanokernel has finished its
+         * work, so move the lifecycle to HALTED (RUNNING -> HALTED). */
+        if (goth_nk_state() == GOTH_NK_STATE_RUNNING) {
+            goth_nk_transition(GOTH_NK_STATE_HALTED);
+        }
         goth_um_context_switch(previous, NULL);
         return NULL;
+    }
+
+    /* First dispatch moves the lifecycle from READY to RUNNING. */
+    if (goth_nk_state() == GOTH_NK_STATE_READY) {
+        goth_nk_transition(GOTH_NK_STATE_RUNNING);
     }
 
     start = task_list;

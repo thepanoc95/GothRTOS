@@ -1,6 +1,7 @@
 #include "pe_arm32.h"
 
 #include "gothrtos/arm32.h"
+#include "gothrtos/hdf.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -121,7 +122,8 @@ static const goth_arm_board_ops_t qemu_board_ops = {
     qemu_uart_putc,
     qemu_uart_getc,
     qemu_time_ns,
-    qemu_exit
+    qemu_exit,
+    NULL
 };
 
 const goth_arm_board_ops_t *goth_arm_board_get_ops(void)

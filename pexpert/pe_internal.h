@@ -10,6 +10,9 @@ typedef struct {
     goth_pe_status_t (*console_read)(char *buffer,
                                      size_t capacity,
                                      size_t *read_length);
+    /* Optional: registers the platform's hardware devices with the HDF. Ports
+     * that have no device model leave this NULL. */
+    goth_pe_status_t (*hdf_register)(void);
 } goth_pe_platform_ops_t;
 
 const goth_pe_platform_ops_t *goth_pe_platform_get_ops(void);

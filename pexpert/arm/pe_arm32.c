@@ -425,13 +425,24 @@ static goth_pe_status_t arm32_pe_console_read(char *buffer,
     return GOTH_PE_STATUS_OK;
 }
 
+static goth_pe_status_t arm32_pe_hdf_register(void)
+{
+    const goth_arm_board_ops_t *board = board_ops();
+
+    if (board != NULL && board->hdf_register != NULL) {
+        board->hdf_register();
+    }
+    return GOTH_PE_STATUS_OK;
+}
+
 const goth_pe_platform_ops_t *goth_pe_platform_get_ops(void)
 {
     static const goth_pe_platform_ops_t platform_ops = {
         arm32_pe_initialize,
         arm32_pe_time_ns,
         arm32_pe_console_write,
-        arm32_pe_console_read
+        arm32_pe_console_read,
+        arm32_pe_hdf_register
     };
 
     return &platform_ops;

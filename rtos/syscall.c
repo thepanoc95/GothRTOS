@@ -2,6 +2,7 @@
 
 #include "gothrtos/klog.h"
 #include "gothrtos/mem.h"
+#include "gothrtos/nanokernel.h"
 #include "gothrtos/vfs.h"
 
 #include <limits.h>
@@ -91,19 +92,12 @@ static goth_syscall_result_t syscall_endpoint_receive(
     return syscall_result(status, 0U);
 }
 
-goth_syscall_result_t goth_syscall_dispatch(
+static goth_syscall_result_t syscall_execute(
     const goth_syscall_request_t *request)
 {
     goth_endpoint_t *endpoint;
     goth_status_t status;
     char path[GOTH_VFS_MAX_PATH];
-
-    if (request == NULL) {
-        return syscall_result(GOTH_STATUS_INVALID_ARGUMENT, 0U);
-    }
-    if (!goth_kernel_is_initialized()) {
-        return syscall_result(GOTH_STATUS_NOT_INITIALIZED, 0U);
-    }
 
     switch (request->number) {
     case GOTH_SYSCALL_TASK_YIELD:
@@ -365,4 +359,25 @@ goth_syscall_result_t goth_syscall_dispatch(
     default:
         return syscall_result(GOTH_STATUS_INVALID_SYSCALL, 0U);
     }
+}
+
+goth_syscall_result_t goth_syscall_dispatch(
+    const goth_syscall_request_t *request)
+{
+    goth_syscall_result_t result;
+
+    if (request == NULL) {
+        return syscall_result(GOTH_STATUS_INVALID_ARGUMENT, 0U);
+    }
+    if (!goth_kernel_is_initialized()) {
+        return syscall_result(GOTH_STATUS_NOT_INITIALIZED, 0U);
+    }
+
+    /* Every syscall executes inside the kernel-mode gate: kernel-only helpers
+     * can assert goth_nk_in_kernel() to refuse a direct userland call. The
+     * gate is left even when the syscall returns early. */
+    goth_nk_enter_kernel();
+    result = syscall_execute(request);
+    goth_nk_leave_kernel();
+    return result;
 }

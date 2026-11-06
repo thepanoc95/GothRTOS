@@ -13,6 +13,9 @@ typedef struct {
     int (*uart_getc)(void);
     uint64_t (*time_ns)(void);
     void (*exit)(int status);
+    /* Optional: publishes the board's devices to the Hardware Driver
+       Foundation. Boards without a device model leave this NULL. */
+    void (*hdf_register)(void);
 } goth_arm_board_ops_t;
 
 const goth_arm_board_ops_t *goth_arm_board_get_ops(void);

@@ -1,7 +1,9 @@
 #include "gothrtos/kernel.h"
 
+#include "gothrtos/hdf.h"
 #include "gothrtos/klog.h"
 #include "gothrtos/mem.h"
+#include "gothrtos/nanokernel.h"
 #include "gothrtos/pexpert.h"
 #include "gothrtos/vfs.h"
 #include "kinternal.h"
@@ -45,10 +47,12 @@ void goth_kernel_init(void)
         return;
     }
 
+    goth_nk_init();
     goth_klog_init();
     goth_klog_printf(GOTH_LOG_INFO,
-                     "GothRTOS version %s (goth@nanokernel) #1",
-                     GOTH_KERNEL_VERSION);
+                     "GothRTOS version %s (%s) #1",
+                     GOTH_KERNEL_VERSION, GOTH_NK_NAME);
+    goth_nk_transition(GOTH_NK_STATE_EARLY);
     log_platform();
 
     if (goth_um_platform_reset(goth_sched_task_list()) != GOTH_STATUS_OK) {
@@ -61,6 +65,7 @@ void goth_kernel_init(void)
     goth_mem_init();
     goth_klog_register_memory();
     goth_vfs_init();
+    goth_nk_transition(GOTH_NK_STATE_READY);
 
     goth_klog_printf(GOTH_LOG_INFO,
                      "Scheduler: %s, quantum=%u tick(s)",
@@ -82,7 +87,41 @@ void goth_kernel_init(void)
         return;
     }
 
+    /* Hardware Driver Foundation: initialize the device model, let the
+     * platform port publish its devices, then bind drivers and start them.
+     * The kernel core owns the HDF; drivers are the only code that touches
+     * device registers. */
+    goth_hdf_init();
+    (void)goth_pe_register_hardware();
+    (void)goth_hdf_probe_all();
+
+    {
+        goth_pe_info_t info;
+        goth_nk_boot_params_t params;
+
+        if (goth_pe_get_info(&info) != GOTH_PE_STATUS_OK) {
+            info.platform_name = "unknown";
+            info.architecture = "unknown";
+            info.pointer_width = 0U;
+            info.logical_cpu_count = 0U;
+        }
+        params.platform = info.platform_name;
+        params.architecture = info.architecture;
+        params.pointer_width = info.pointer_width;
+        params.logical_cpus = info.logical_cpu_count;
+        params.scheduler = goth_kernel_get_scheduler();
+        params.quantum = goth_kernel_quantum();
+        goth_nk_capture_boot(&params);
+    }
+
     kernel_initialized = true;
+    goth_klog_printf(GOTH_LOG_INFO,
+                     "Nanokernel: %zu subsystem(s), %zu kernel, %zu platform, "
+                     "%zu userland",
+                     goth_nk_subsystem_count(),
+                     goth_nk_scope_count(GOTH_NK_SCOPE_KERNEL),
+                     goth_nk_scope_count(GOTH_NK_SCOPE_PLATFORM),
+                     goth_nk_scope_count(GOTH_NK_SCOPE_USER));
     goth_klog_printf(GOTH_LOG_INFO,
                      "Kernel initialized; %zu task slot(s), %llu tick(s)",
                      goth_kernel_task_count(),
@@ -100,6 +139,7 @@ void goth_kernel_panic(const char *reason)
         return;
     }
     kernel_panicked = true;
+    goth_nk_transition(GOTH_NK_STATE_PANIC);
     goth_klog_printf(GOTH_LOG_EMERG, "%s",
                      reason != NULL ? reason : "unknown kernel fault");
     goth_klog_printf(GOTH_LOG_EMERG,

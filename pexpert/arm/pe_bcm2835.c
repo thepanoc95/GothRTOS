@@ -1,6 +1,7 @@
 #include "pe_arm32.h"
 
 #include "gothrtos/arm32.h"
+#include "gothrtos/hdf.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -120,13 +121,42 @@ static void bcm2835_exit(int status)
     }
 }
 
+/* Device model for the BCM2835 board. The UART is a PL011 on the platform
+ * bus; the system timer is a 1 MHz free-running counter. Both are published
+ * so drivers can bind instead of reaching for the registers directly. */
+static goth_hdf_device_t bcm2835_uart_device = {
+    "bcm2835-uart0", "brcm,bcm2835-pl011", GOTH_HDF_BUS_PLATFORM,
+    GOTH_HDF_CLASS_CONSOLE, 0U, {{0U, 0U, 0U}}, 0U, {{0U, 0U}}, 0U,
+    NULL, NULL, GOTH_HDF_DEVICE_UNREGISTERED, GOTH_HDF_POWER_OFF, NULL
+};
+static goth_hdf_device_t bcm2835_timer_device = {
+    "bcm2835-systimer", "brcm,bcm2835-system-timer", GOTH_HDF_BUS_PLATFORM,
+    GOTH_HDF_CLASS_TIMER, 0U, {{0U, 0U, 0U}}, 0U, {{0U, 0U}}, 0U,
+    NULL, NULL, GOTH_HDF_DEVICE_UNREGISTERED, GOTH_HDF_POWER_OFF, NULL
+};
+
+static void bcm2835_hdf_register(void)
+{
+    bcm2835_uart_device.mmio[0].base = GOTH_ARM32_UART_BASE;
+    bcm2835_uart_device.mmio[0].size = 0x1000U;
+    bcm2835_uart_device.mmio_count = 1U;
+
+    bcm2835_timer_device.mmio[0].base = GOTH_ARM32_SYSTIMER_BASE;
+    bcm2835_timer_device.mmio[0].size = 0x1000U;
+    bcm2835_timer_device.mmio_count = 1U;
+
+    (void)goth_hdf_register_device(&bcm2835_uart_device);
+    (void)goth_hdf_register_device(&bcm2835_timer_device);
+}
+
 static const goth_arm_board_ops_t bcm2835_board_ops = {
     "Raspberry Pi Zero (BCM2835)",
     bcm2835_uart_init,
     bcm2835_uart_putc,
     bcm2835_uart_getc,
     bcm2835_time_ns,
-    bcm2835_exit
+    bcm2835_exit,
+    bcm2835_hdf_register
 };
 
 const goth_arm_board_ops_t *goth_arm_board_get_ops(void)

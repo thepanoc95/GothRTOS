@@ -352,7 +352,8 @@ const goth_pe_platform_ops_t *goth_pe_platform_get_ops(void)
         goth_pe_w64_initialize,
         goth_pe_w64_time_ns,
         goth_pe_w64_console_write,
-        goth_pe_w64_console_read
+        goth_pe_w64_console_read,
+        NULL
     };
 
     return &platform_ops;
