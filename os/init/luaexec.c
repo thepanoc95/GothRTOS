@@ -1,5 +1,6 @@
 #include "gothrtos/luaexec.h"
 #include "gothrtos/gothlib.h"
+#include "gothrtos/kernlib.h"
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -13,6 +14,9 @@ static void open_environment(lua_State *state)
 {
     luaL_openlibs(state);
     (void)goth_lua_open_userapi(state);
+    /* GothRTOS-specific kernel view: the nanokernel state, subsystem split,
+     * HDF device table and boot parameters, reachable as goth.kernel. */
+    (void)goth_lua_open_kernel(state);
 }
 
 static void set_arguments(lua_State *state,

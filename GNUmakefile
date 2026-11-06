@@ -100,6 +100,7 @@ GOTHC_LUA_LIBRARY = $(BUILD_DIR)/liblua-gothc.a
 LUA_INTERPRETER_BINARY = $(BUILD_DIR)/lua
 LUAEXEC_OBJECT = $(BUILD_DIR)/os/init/luaexec.o
 GOTHLIB_OBJECT = $(BUILD_DIR)/os/init/gothlib.o
+KERNLIB_OBJECT = $(BUILD_DIR)/os/init/kernlib.o
 LUAEXEC_TEST_BINARY = $(BUILD_DIR)/test_luaexec
 USERAPI_TEST_BINARY = $(BUILD_DIR)/test_userapi
 USERAPI_LUA_STAMP = $(BUILD_DIR)/.userapi_lua_stamp
@@ -186,7 +187,7 @@ endif
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
 	rpi-zero run-rpi-zero test-rpi-zero
 
-all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNEL_BINARY)
+all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY)
 
 kernel: $(KERNEL_BINARY)
 
@@ -267,9 +268,9 @@ $(LIBRARY): $(OBJECTS) $(UM_PLATFORM_STAMP)
 	@rm -f $@
 	$(AR) rcs $@ $(OBJECTS)
 
-$(KERNEL_BINARY): os/loader/kern.c $(LIBRARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(LUA_LIBRARY) include/gothrtos/cmdline.h include/gothrtos/kernel.h include/gothrtos/luaexec.h include/gothrtos/gothlib.h include/gothrtos/userapi.h include/gothrtos/pexpert.h include/gothrtos/um.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h | $(BUILD_DIR)
+$(KERNEL_BINARY): os/loader/kern.c $(LIBRARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(LUA_LIBRARY) include/gothrtos/cmdline.h include/gothrtos/kernel.h include/gothrtos/luaexec.h include/gothrtos/gothlib.h include/gothrtos/kernlib.h include/gothrtos/userapi.h include/gothrtos/pexpert.h include/gothrtos/um.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
-	$(CC) $(CPPFLAGS) $(CFLAGS) os/loader/kern.c $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) -L$(BUILD_DIR) -lgothrtos -llua $(LUA_LIBS) $(UM_PLATFORM_LIBS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) os/loader/kern.c $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) -L$(BUILD_DIR) -lgothrtos -llua $(LUA_LIBS) $(UM_PLATFORM_LIBS) -o $@
 
 $(KAPI_OBJECT): libkapi/kapi.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/kapi.h include/gothrtos/vfs.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
@@ -339,6 +340,11 @@ $(GOTHLIB_OBJECT): os/init/gothlib.c include/gothrtos/gothlib.h include/gothrtos
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(LUA_CPPFLAGS) $(CFLAGS) -c $< -o $@
 
+$(KERNLIB_OBJECT): os/init/kernlib.c include/gothrtos/kernlib.h include/gothrtos/nanokernel.h include/gothrtos/hdf.h os/lua/lua.h os/lua/lauxlib.h | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
+	$(CC) $(LUA_CPPFLAGS) $(CFLAGS) -c $< -o $@
+
 $(TEST_BINARY): tests/test_kernel.c $(LIBRARY) $(KAPI_LIBRARY) include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/kapi.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_kernel.c -L$(BUILD_DIR) -lkapi -lgothrtos $(UM_PLATFORM_LIBS) -o $@
@@ -356,9 +362,9 @@ $(LIBC_TEST_BINARY): tests/test_libc.c $(LIBC_TEST_OBJECTS) libc/include/string.
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(LIBC_CPPFLAGS) $(LIBC_CFLAGS) $(LIBC_TEST_DEFINES) $(CFLAGS) $< $(LIBC_TEST_OBJECTS) -o $@
 
-$(LUAEXEC_TEST_BINARY): tests/test_luaexec.c tests/lua_smoke.lua $(LIBRARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(LUA_LIBRARY) include/gothrtos/luaexec.h include/gothrtos/gothlib.h include/gothrtos/userapi.h | $(BUILD_DIR)
+$(LUAEXEC_TEST_BINARY): tests/test_luaexec.c tests/lua_smoke.lua $(LIBRARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(LUA_LIBRARY) include/gothrtos/luaexec.h include/gothrtos/gothlib.h include/gothrtos/kernlib.h include/gothrtos/userapi.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
-	$(CC) $(LUA_CPPFLAGS) $(CFLAGS) tests/test_luaexec.c $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) -L$(BUILD_DIR) -lgothrtos -llua $(LUA_LIBS) -o $@
+	$(CC) $(LUA_CPPFLAGS) $(CFLAGS) tests/test_luaexec.c $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) -L$(BUILD_DIR) -lgothrtos -llua $(LUA_LIBS) -o $@
 
 $(BIN_FMT_TEST_BINARY): tests/test_95exc.c $(LIBRARY) include/gothrtos/95exc.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
@@ -426,6 +432,9 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(LUA_INTERPRETER_BINARY) tests/test_init_modules.lua
 	$(LUA_INTERPRETER_BINARY) tests/test_userland_api.lua
 	$(KERNEL_BINARY) -init=tests/test_userland_api.lua -verbose=0
+	$(KERNEL_BINARY) -init=tests/test_kernlib.lua -verbose=0
+	$(LUA_INTERPRETER_BINARY) tests/test_userkernel.lua
+	$(KERNEL_BINARY) -init=tests/test_userkernel.lua -verbose=0
 
 clean:
 	@printf "  $(COLOR_RM)%-12s$(RESET) %s\n" "RM" "$(BUILD_DIR)"
