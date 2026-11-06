@@ -28,12 +28,12 @@ static void log_platform(void)
 
     if (goth_pe_get_info(&info) != GOTH_PE_STATUS_OK) {
         goth_klog_printf(GOTH_LOG_NOTICE,
-                         "Platform: unknown (pexpert not initialized)");
+                         "OSPlatform: unknown (pexpert not initialized)");
         return;
     }
 
     goth_klog_printf(GOTH_LOG_INFO,
-                     "Platform: %s, %s, %u-bit, %u logical CPU(s)",
+                     "OSPlatform: %s, %s, %u-bit, %u logical CPU(s)",
                      info.platform_name, info.architecture,
                      (unsigned int)info.pointer_width,
                      (unsigned int)info.logical_cpu_count);

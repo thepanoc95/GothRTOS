@@ -128,7 +128,7 @@ function SystemKit:format()
     local lines = {
         "GothRTOS " .. tostring(info.version) ..
             " (" .. tostring(info.build) .. ")",
-        "nanokernel state: " .. tostring(info.kernelState),
+        "kernel state: " .. tostring(info.kernelState),
         "kernel mode: " .. tostring(info.mode),
         "profile: " .. tostring(info.profile),
         "scheduler: " .. tostring(info.scheduler),
