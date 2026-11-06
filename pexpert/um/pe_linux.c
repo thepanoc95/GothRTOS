@@ -487,7 +487,7 @@ static goth_pe_status_t goth_pe_linux_initialize(goth_pe_info_t *info)
     }
 
     cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
-    info->platform_name = "Linux user mode";
+    info->platform_name = GOTH_UM_TARGET_TRIPLE;
     info->logical_cpu_count = cpu_count > 0 ? (uint32_t)cpu_count : 1U;
 
 #if defined(__x86_64__) || defined(__amd64__)

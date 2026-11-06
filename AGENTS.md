@@ -57,9 +57,19 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
 - `include/gothrtos/` — public headers. `userapi.h` is the userland surface.
 - `libkapi/kapi.c` — thin kernel API wrapper over the syscalls.
 - `pexpert/` — platform experts. `common.c` dispatches to per-platform ops
-  (`pexpert/um/pe_linux.c`, `pexpert/um/pe_w64.c`, `pexpert/arm/`,
-  `pexpert/amd64/`). The ops table lives in `pexpert/pe_internal.h`; add new
-  ops to every port. The bare-metal ports each have a `kern_*.c` entry in
+  (`pexpert/um/pe_linux.c`, `pexpert/um/pe_linux_pthread.c`,
+  `pexpert/um/pe_w64.c`, `pexpert/arm/`, `pexpert/amd64/`). The ops table lives
+  in `pexpert/pe_internal.h`; add new ops to every port. On Linux the makefile
+  probes the host libc: glibc implements the `ucontext` family, so it uses
+  `pe_linux.c`; musl and Android's bionic only declare
+  `getcontext`/`makecontext`/`swapcontext` and fail to link, so those use
+  `pe_linux_pthread.c` (one pthread per task with a scheduler token). Force one
+  with `make UM_CONTEXT=ucontext` or `UM_CONTEXT=pthread`. The user-mode
+  experts report the compiler's LLVM target triple (clang's
+  `-print-target-triple`, else gcc's `-dumpmachine`) as `platform_name`; the
+  makefile passes it as `-DGOTH_UM_TARGET_TRIPLE`, and
+  `pexpert/um/um_internal.h` falls back to `"unknown"` when it is absent. The
+  bare-metal ports each have a `kern_*.c` entry in
   `os/loader/` (`kern_arm.c`, `kern_cm.c`, `kern_amd64.c`) that boots the
   nanokernel and runs two demo tasks.
 - `os/init/init.d/*.lua` — boot environment (`os.lua`, `path.lua`,
