@@ -166,6 +166,36 @@ RPI_OBJECTS = $(patsubst %.c,$(RPI_BUILD_DIR)/obj/%.o,$(RPI_C_SOURCES)) \
 RPI_ELF = $(RPI_BUILD_DIR)/kernel.elf
 RPI_IMG = $(RPI_BUILD_DIR)/kernel.img
 QEMU_RPI_FLAGS ?= -M raspi0 -cpu arm1176 -m 512M -nographic
+# AMD64 bare metal (QEMU x86_64 "pc", COM1 serial)
+AMD64_CC ?= cc
+AMD64_OBJCOPY ?= objcopy
+AMD64_BUILD_DIR ?= $(BUILD_DIR)/amd64
+AMD64_CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/amd64
+AMD64_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -m64 \
+        -ffreestanding -fno-builtin -fno-stack-protector -fno-pie \
+        -mno-red-zone -fno-unwind-tables -fno-asynchronous-unwind-tables \
+        -ffunction-sections -fdata-sections -O2 -g
+AMD64_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/amd64/amd64.ld \
+        -Wl,--gc-sections -Wl,-Map=$(AMD64_BUILD_DIR)/kernel.map -no-pie
+AMD64_LIBS ?= -lgcc
+AMD64_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
+        rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+        pexpert/common.c pexpert/amd64/pe_amd64.c pexpert/amd64/pe_amd64_qemu.c \
+        pexpert/amd64/amd64_libc.c os/loader/kern_amd64.c
+AMD64_ASM_SOURCES = pexpert/amd64/amd64_start.S
+AMD64_OBJECTS = $(patsubst %.c,$(AMD64_BUILD_DIR)/obj/%.o,$(AMD64_C_SOURCES)) \
+        $(patsubst %.S,$(AMD64_BUILD_DIR)/obj/%.o,$(AMD64_ASM_SOURCES))
+AMD64_ELF = $(AMD64_BUILD_DIR)/kernel.elf
+AMD64_BIN = $(AMD64_BUILD_DIR)/kernel.bin
+AMD64_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
+        include/gothrtos/um.h include/gothrtos/amd64.h \
+        include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h \
+        include/gothrtos/nanokernel.h include/gothrtos/hdf.h \
+        rtos/kinternal.h pexpert/pe_internal.h pexpert/amd64/um_internal.h \
+        pexpert/amd64/pe_amd64.h
+QEMU_AMD64 ?= qemu-system-x86_64
+QEMU_AMD64_FLAGS ?= -m 256M -nographic -no-reboot
+
 LIBC_TEST_OBJECTS = $(BUILD_DIR)/libc_test/string.o $(BUILD_DIR)/libc_test/stdlib.o
 TEST_BINARY = $(BUILD_DIR)/test_kernel
 KLIB_TEST_BINARY = $(BUILD_DIR)/test_klib
@@ -185,7 +215,7 @@ ifndef V
 endif
 
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
-	rpi-zero run-rpi-zero test-rpi-zero
+	rpi-zero run-rpi-zero test-rpi-zero amd64 run-amd64 test-amd64
 
 all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY)
 
@@ -208,6 +238,14 @@ run-rpi-zero: $(RPI_ELF)
 
 test-rpi-zero: $(RPI_ELF)
 	sh tests/run_rpi_qemu.sh $(RPI_ELF) $(RPI_BUILD_DIR)/qemu.log
+
+amd64: $(AMD64_ELF) $(AMD64_BIN)
+
+run-amd64: $(AMD64_ELF)
+	$(QEMU_AMD64) $(QEMU_AMD64_FLAGS) -kernel $(AMD64_ELF)
+
+test-amd64: $(AMD64_BIN)
+	sh tests/run_amd64_qemu.sh $(AMD64_ELF) $(AMD64_BUILD_DIR)/qemu.log
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
@@ -253,6 +291,27 @@ $(RPI_ELF): $(RPI_OBJECTS) pexpert/arm/bcm2835.ld
 $(RPI_IMG): $(RPI_ELF)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
 	$(RPI_OBJCOPY) -O binary $< $@
+
+$(AMD64_BUILD_DIR):
+	@mkdir -p $(AMD64_BUILD_DIR)
+
+$(AMD64_BUILD_DIR)/obj/%.o: %.c $(AMD64_HEADERS) | $(AMD64_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC(amd64)" "$<"
+	$(AMD64_CC) $(AMD64_CPPFLAGS) $(AMD64_CFLAGS) -c $< -o $@
+
+$(AMD64_BUILD_DIR)/obj/%.o: %.S $(AMD64_HEADERS) | $(AMD64_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "AS(amd64)" "$<"
+	$(AMD64_CC) $(AMD64_CPPFLAGS) $(AMD64_CFLAGS) -c $< -o $@
+
+$(AMD64_ELF): $(AMD64_OBJECTS) pexpert/amd64/amd64.ld
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD(amd64)" "$@"
+	$(AMD64_CC) $(AMD64_CFLAGS) $(AMD64_LDFLAGS) $(AMD64_OBJECTS) $(AMD64_LIBS) -o $@
+
+$(AMD64_BIN): $(AMD64_ELF)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
+	$(AMD64_OBJCOPY) -O binary $< $@
 
 $(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h include/gothrtos/nanokernel.h include/gothrtos/hdf.h include/gothrtos/sparsekernel.h rtos/kinternal.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
