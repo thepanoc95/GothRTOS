@@ -124,7 +124,8 @@ ARM_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/arm32.ld \
 	-Wl,--gc-sections -Wl,-Map=$(ARM_BUILD_DIR)/kern.map
 ARM_LIBS ?= -lgcc
 ARM_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
-	rtos/klog.c rtos/mem.c rtos/vfs.c pexpert/common.c \
+	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+	pexpert/common.c \
 	pexpert/arm/pe_arm32.c pexpert/arm/pe_arm32_qemu.c \
 	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
 ARM_ASM_SOURCES = pexpert/arm/arm32_start.S
@@ -132,9 +133,11 @@ ARM_OBJECTS = $(patsubst %.c,$(ARM_BUILD_DIR)/obj/%.o,$(ARM_C_SOURCES)) \
 	$(patsubst %.S,$(ARM_BUILD_DIR)/obj/%.o,$(ARM_ASM_SOURCES))
 ARM_ELF = $(ARM_BUILD_DIR)/kern.elf
 ARM_BIN = $(ARM_BUILD_DIR)/kern.bin
+ARM_IMG3 = $(ARM_BUILD_DIR)/SparseKernel.img3
 ARM_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
 	include/gothrtos/um.h include/gothrtos/arm32.h \
 	include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h \
+	include/gothrtos/nanokernel.h include/gothrtos/hdf.h \
 	rtos/kinternal.h pexpert/pe_internal.h pexpert/arm/um_internal.h pexpert/arm/pe_arm32.h
 QEMU_ARM ?= qemu-system-arm
 QEMU_ARM_FLAGS ?= -M virt -cpu cortex-a15 -m 128M -nographic \
@@ -157,7 +160,8 @@ RPI_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/bcm2835.ld \
 	-Wl,--gc-sections -Wl,-Map=$(RPI_BUILD_DIR)/kernel.map
 RPI_LIBS ?= -lgcc
 RPI_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
-	rtos/klog.c rtos/mem.c rtos/vfs.c pexpert/common.c \
+	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+	pexpert/common.c \
 	pexpert/arm/pe_arm32.c pexpert/arm/pe_bcm2835.c \
 	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
 RPI_ASM_SOURCES = pexpert/arm/arm32_start.S
@@ -165,6 +169,7 @@ RPI_OBJECTS = $(patsubst %.c,$(RPI_BUILD_DIR)/obj/%.o,$(RPI_C_SOURCES)) \
 	$(patsubst %.S,$(RPI_BUILD_DIR)/obj/%.o,$(RPI_ASM_SOURCES))
 RPI_ELF = $(RPI_BUILD_DIR)/kernel.elf
 RPI_IMG = $(RPI_BUILD_DIR)/kernel.img
+RPI_IMG3 = $(RPI_BUILD_DIR)/SparseKernel.img3
 QEMU_RPI_FLAGS ?= -M raspi0 -cpu arm1176 -m 512M -nographic
 # AMD64 bare metal (QEMU x86_64 "pc", COM1 serial)
 AMD64_CC ?= cc
@@ -187,6 +192,7 @@ AMD64_OBJECTS = $(patsubst %.c,$(AMD64_BUILD_DIR)/obj/%.o,$(AMD64_C_SOURCES)) \
         $(patsubst %.S,$(AMD64_BUILD_DIR)/obj/%.o,$(AMD64_ASM_SOURCES))
 AMD64_ELF = $(AMD64_BUILD_DIR)/kernel.elf
 AMD64_BIN = $(AMD64_BUILD_DIR)/kernel.bin
+AMD64_IMG3 = $(AMD64_BUILD_DIR)/SparseKernel.img3
 AMD64_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
         include/gothrtos/um.h include/gothrtos/amd64.h \
         include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h \
@@ -195,6 +201,50 @@ AMD64_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
         pexpert/amd64/pe_amd64.h
 QEMU_AMD64 ?= qemu-system-x86_64
 QEMU_AMD64_FLAGS ?= -m 256M -nographic -no-reboot
+
+# Raspberry Pi Pico (RP2040, Cortex-M0+) and Pico 2 (RP2350, Cortex-M33).
+# Both build a flat SRAM image that is either flashed directly or streamed by
+# the SYSGOTH bootloader as SparseKernel.img3.
+PICO_CC ?= arm-none-eabi-gcc
+PICO_OBJCOPY ?= arm-none-eabi-objcopy
+PICO_CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/arm
+PICO_COMMON_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic \
+        -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin \
+        -fno-unwind-tables -fno-asynchronous-unwind-tables \
+        -ffunction-sections -fdata-sections -O2 -g
+PICO_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
+        rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+        pexpert/common.c pexpert/arm/pe_cortexm.c pexpert/arm/pe_rp2040.c \
+        pexpert/arm/cm_libc.c os/loader/kern_cm.c
+PICO_ASM_SOURCES = pexpert/arm/cm_start.S
+PICO_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
+        include/gothrtos/um.h include/gothrtos/cortexm.h \
+        include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h \
+        include/gothrtos/nanokernel.h include/gothrtos/hdf.h \
+        rtos/kinternal.h pexpert/pe_internal.h pexpert/arm/um_internal_cm.h \
+        pexpert/arm/pe_cortexm.h
+
+# Pico (RP2040)
+PICO_BUILD_DIR ?= $(BUILD_DIR)/pico
+PICO_CFLAGS ?= $(PICO_COMMON_CFLAGS) -mcpu=cortex-m0plus
+PICO_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/cm.ld \
+        -Wl,--gc-sections -Wl,-Map=$(PICO_BUILD_DIR)/kernel.map
+PICO_LIBS ?= -lgcc
+PICO_OBJECTS = $(patsubst %.c,$(PICO_BUILD_DIR)/obj/%.o,$(PICO_C_SOURCES)) \
+        $(patsubst %.S,$(PICO_BUILD_DIR)/obj/%.o,$(PICO_ASM_SOURCES))
+PICO_ELF = $(PICO_BUILD_DIR)/kernel.elf
+PICO_IMG3 = $(PICO_BUILD_DIR)/SparseKernel.img3
+
+# Pico 2 (RP2350)
+PICO2_BUILD_DIR ?= $(BUILD_DIR)/pico2
+PICO2_CFLAGS ?= $(PICO_COMMON_CFLAGS) -mcpu=cortex-m33 -DGOTH_CM_RP2350
+PICO2_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/cm.ld \
+        -Wl,--gc-sections -Wl,-Map=$(PICO2_BUILD_DIR)/kernel.map
+PICO2_LIBS ?= -lgcc
+PICO2_OBJECTS = $(patsubst %.c,$(PICO2_BUILD_DIR)/obj/%.o,$(PICO_C_SOURCES)) \
+        $(patsubst %.S,$(PICO2_BUILD_DIR)/obj/%.o,$(PICO_ASM_SOURCES))
+PICO2_ELF = $(PICO2_BUILD_DIR)/kernel.elf
+PICO2_IMG3 = $(PICO2_BUILD_DIR)/SparseKernel.img3
 
 LIBC_TEST_OBJECTS = $(BUILD_DIR)/libc_test/string.o $(BUILD_DIR)/libc_test/stdlib.o
 TEST_BINARY = $(BUILD_DIR)/test_kernel
@@ -215,7 +265,8 @@ ifndef V
 endif
 
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
-	rpi-zero run-rpi-zero test-rpi-zero amd64 run-amd64 test-amd64
+	rpi-zero run-rpi-zero test-rpi-zero amd64 run-amd64 test-amd64 \
+	pico pico2
 
 all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY)
 
@@ -223,7 +274,7 @@ kernel: $(KERNEL_BINARY)
 
 lua: $(LUA_INTERPRETER_BINARY)
 
-arm32: $(ARM_ELF) $(ARM_BIN)
+arm32: $(ARM_ELF) $(ARM_BIN) $(ARM_IMG3)
 
 run-arm32: $(ARM_ELF)
 	$(QEMU_ARM) $(QEMU_ARM_FLAGS) -kernel $(ARM_ELF)
@@ -231,7 +282,7 @@ run-arm32: $(ARM_ELF)
 test-arm32: $(ARM_ELF)
 	sh tests/run_arm32_qemu.sh $(ARM_ELF) $(ARM_BUILD_DIR)/qemu.log
 
-rpi-zero: $(RPI_ELF) $(RPI_IMG)
+rpi-zero: $(RPI_ELF) $(RPI_IMG) $(RPI_IMG3)
 
 run-rpi-zero: $(RPI_ELF)
 	$(QEMU_ARM) $(QEMU_RPI_FLAGS) -kernel $(RPI_ELF)
@@ -239,13 +290,17 @@ run-rpi-zero: $(RPI_ELF)
 test-rpi-zero: $(RPI_ELF)
 	sh tests/run_rpi_qemu.sh $(RPI_ELF) $(RPI_BUILD_DIR)/qemu.log
 
-amd64: $(AMD64_ELF) $(AMD64_BIN)
+amd64: $(AMD64_ELF) $(AMD64_BIN) $(AMD64_IMG3)
 
 run-amd64: $(AMD64_ELF)
 	$(QEMU_AMD64) $(QEMU_AMD64_FLAGS) -kernel $(AMD64_ELF)
 
 test-amd64: $(AMD64_BIN)
 	sh tests/run_amd64_qemu.sh $(AMD64_ELF) $(AMD64_BUILD_DIR)/qemu.log
+
+pico: $(PICO_ELF) $(PICO_IMG3)
+
+pico2: $(PICO2_ELF) $(PICO2_IMG3)
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
@@ -312,6 +367,63 @@ $(AMD64_ELF): $(AMD64_OBJECTS) pexpert/amd64/amd64.ld
 $(AMD64_BIN): $(AMD64_ELF)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
 	$(AMD64_OBJCOPY) -O binary $< $@
+
+# SparseKernel.img3: the sparse payload the SYSGOTH bootloader streams over
+# the UART. Every embedded build produces one so a board can be reflashed
+# over the serial link alone. The generator is a host tool, so it can encode
+# an image built for another architecture.
+$(ARM_IMG3): $(ARM_ELF) $(SPARSEKERNEL_GEN)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "SPARSE" "$@"
+	$(SPARSEKERNEL_GEN) $< $@
+
+$(RPI_IMG3): $(RPI_ELF) $(SPARSEKERNEL_GEN)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "SPARSE" "$@"
+	$(SPARSEKERNEL_GEN) $< $@
+
+$(AMD64_IMG3): $(AMD64_ELF) $(SPARSEKERNEL_GEN)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "SPARSE" "$@"
+	$(SPARSEKERNEL_GEN) $< $@
+$(PICO_IMG3): $(PICO_ELF) $(SPARSEKERNEL_GEN)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "SPARSE" "$@"
+	$(SPARSEKERNEL_GEN) $< $@
+
+$(PICO2_IMG3): $(PICO2_ELF) $(SPARSEKERNEL_GEN)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "SPARSE" "$@"
+	$(SPARSEKERNEL_GEN) $< $@
+
+$(PICO_BUILD_DIR):
+	@mkdir -p $(PICO_BUILD_DIR)
+
+$(PICO_BUILD_DIR)/obj/%.o: %.c $(PICO_HEADERS) | $(PICO_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC(pico)" "$<"
+	$(PICO_CC) $(PICO_CPPFLAGS) $(PICO_CFLAGS) -c $< -o $@
+
+$(PICO_BUILD_DIR)/obj/%.o: %.S $(PICO_HEADERS) | $(PICO_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "AS(pico)" "$<"
+	$(PICO_CC) $(PICO_CPPFLAGS) $(PICO_CFLAGS) -c $< -o $@
+
+$(PICO_ELF): $(PICO_OBJECTS) pexpert/arm/cm.ld
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD(pico)" "$@"
+	$(PICO_CC) $(PICO_CFLAGS) $(PICO_LDFLAGS) $(PICO_OBJECTS) $(PICO_LIBS) -o $@
+
+$(PICO2_BUILD_DIR):
+	@mkdir -p $(PICO2_BUILD_DIR)
+
+$(PICO2_BUILD_DIR)/obj/%.o: %.c $(PICO_HEADERS) | $(PICO2_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC(pico2)" "$<"
+	$(PICO_CC) $(PICO_CPPFLAGS) $(PICO2_CFLAGS) -c $< -o $@
+
+$(PICO2_BUILD_DIR)/obj/%.o: %.S $(PICO_HEADERS) | $(PICO2_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "AS(pico2)" "$<"
+	$(PICO_CC) $(PICO_CPPFLAGS) $(PICO2_CFLAGS) -c $< -o $@
+
+$(PICO2_ELF): $(PICO2_OBJECTS) pexpert/arm/cm.ld
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD(pico2)" "$@"
+	$(PICO_CC) $(PICO2_CFLAGS) $(PICO2_LDFLAGS) $(PICO2_OBJECTS) $(PICO2_LIBS) -o $@
 
 $(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h include/gothrtos/klog.h include/gothrtos/mem.h include/gothrtos/vfs.h include/gothrtos/nanokernel.h include/gothrtos/hdf.h include/gothrtos/sparsekernel.h rtos/kinternal.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)

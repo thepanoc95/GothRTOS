@@ -18,19 +18,32 @@ make            # host build: libgothrtos.a, libkapi.a, libgothc.a, liblua.a,
 make test       # full host suite (C tests, Lua tests, kernel boot smoke tests)
 make arm32      # bare-metal QEMU virt image (needs arm-none-eabi-gcc)
 make rpi-zero   # Raspberry Pi Zero image
+make pico       # Raspberry Pi Pico (RP2040, Cortex-M0+) image
+make pico2      # Raspberry Pi Pico 2 (RP2350, Cortex-M33) image
+make amd64      # AMD64 bare-metal image (QEMU x86_64 "pc")
 ```
+
+Every embedded target (`arm32`, `rpi-zero`, `pico`, `pico2`, `amd64`) also
+produces `SparseKernel.img3` next to its kernel image. That sparse payload is
+what the SYSGOTH bootloader streams over the UART, so a board can be reflashed
+over the serial link alone (`sysgoth/main.cpp` is the host side).
 
 `make test` runs `build/kern.ldr` several times. It boots the init script and
 the shell, which read from stdin. Always run it as `make test </dev/null` in a
 non-interactive session, otherwise the shell blocks forever waiting on a TTY.
 
-The ARM/RPi toolchains are not installed in the default dev container, so
-`make arm32` / `make rpi-zero` cannot be exercised here. Syntax-check ARM port
-changes with the host compiler instead:
+The ARM/Pico/RPi toolchains are not installed in the default dev container, so
+`make arm32` / `make rpi-zero` / `make pico` cannot be exercised here, and
+`qemu-system-x86` is not installed so `make test-amd64` cannot run either.
+Syntax-check bare-metal port changes with the host compiler instead:
 
 ```sh
 cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
    -Iinclude -Ipexpert -Ipexpert/arm -fsyntax-only pexpert/arm/pe_arm32.c
+cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
+   -Iinclude -Ipexpert -Ipexpert/arm -fsyntax-only pexpert/arm/pe_cortexm.c
+cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
+   -Iinclude -Ipexpert -Ipexpert/amd64 -fsyntax-only pexpert/amd64/pe_amd64.c
 ```
 
 ## Layout
@@ -43,8 +56,11 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
 - `include/gothrtos/` — public headers. `userapi.h` is the userland surface.
 - `libkapi/kapi.c` — thin kernel API wrapper over the syscalls.
 - `pexpert/` — platform experts. `common.c` dispatches to per-platform ops
-  (`pexpert/um/pe_linux.c`, `pexpert/um/pe_w64.c`, `pexpert/arm/`). The ops
-  table lives in `pexpert/pe_internal.h`; add new ops to every port.
+  (`pexpert/um/pe_linux.c`, `pexpert/um/pe_w64.c`, `pexpert/arm/`,
+  `pexpert/amd64/`). The ops table lives in `pexpert/pe_internal.h`; add new
+  ops to every port. The bare-metal ports each have a `kern_*.c` entry in
+  `os/loader/` (`kern_arm.c`, `kern_cm.c`, `kern_amd64.c`) that boots the
+  nanokernel and runs two demo tasks.
 - `os/init/init.d/*.lua` — boot environment (`os.lua`, `path.lua`,
   `kernel_mounts.lua`, `kernelmode.lua`, `sh.lua`, `userapi.lua`).
 - `os/init/init.d/base/*.lua` — the GothRTOS userland OS API in Lua (`io`,
@@ -66,8 +82,8 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
   `goth_status_t`. Lua bindings map failures to `(false, message)` and
   lookups to `nil`.
 - New source files must be added to the relevant source list in `GNUmakefile`
-  (`SOURCES`, `ARM_C_SOURCES`, `RPI_C_SOURCES`) and to the matching header
-  dependency lists.
+  (`SOURCES`, `ARM_C_SOURCES`, `RPI_C_SOURCES`, `PICO_C_SOURCES`,
+  `AMD64_C_SOURCES`) and to the matching header dependency lists.
 - Lua userland modules must keep working under the standalone `build/lua`
   interpreter (no `goth` table). Guard on `type(goth) == "table"` and fall back
   to Lua's `io`/`os`.
@@ -81,3 +97,8 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
   facade; runs both standalone and through `build/kern.ldr`.
 - `tests/test_system.lua`, `tests/test_init_modules.lua` — Lua boot modules,
   run both standalone and through the kernel.
+- `tests/test_kernlib.lua`, `tests/test_userkernel.lua` — the kernel Lua
+  library and the UserKernel modes/profiles/services; run standalone and
+  through the kernel.
+- `tests/test_sparsekernel.c`, `tests/test_sysgoth.c` — the SparseKernel.img3
+  format and the SYSGOTH loader core.
