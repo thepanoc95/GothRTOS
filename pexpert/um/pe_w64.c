@@ -230,7 +230,7 @@ static goth_pe_status_t goth_pe_w64_initialize(goth_pe_info_t *info)
     }
 
     GetSystemInfo(&system_info);
-    info->platform_name = "Windows user mode";
+    info->platform_name = GOTH_UM_TARGET_TRIPLE;
     info->logical_cpu_count = system_info.dwNumberOfProcessors;
 
 #if defined(_M_X64) || defined(__x86_64__)

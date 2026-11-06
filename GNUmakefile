@@ -36,6 +36,15 @@ else
   KLIB_ENABLED ?= yes
 endif
 
+# LLVM-style target triple of the compiler, e.g. "x86_64-linux-gnu". The
+# user-mode platform expert reports this as its platform identifier, so it is
+# read from the compiler rather than guessed from preprocessor macros. Clang
+# answers -print-target-triple; gcc only has -dumpmachine.
+CC_TARGET_TRIPLE := $(shell $(CC) -print-target-triple 2>/dev/null || $(CC) -dumpmachine 2>/dev/null)
+ifneq ($(strip $(CC_TARGET_TRIPLE)),)
+override CPPFLAGS += -DGOTH_UM_TARGET_TRIPLE='"$(strip $(CC_TARGET_TRIPLE))"'
+endif
+
 ifeq ($(UM_PLATFORM),)
   ifeq ($(OS),Windows_NT)
     UM_PLATFORM := windows
@@ -48,9 +57,33 @@ ifeq ($(UM_PLATFORM),)
   endif
 endif
 
+# The Linux user-mode expert can drive tasks with the ucontext family
+# (getcontext/makecontext/swapcontext) or, where the libc does not implement
+# them, with one pthread per task. glibc implements ucontext; musl and
+# Android's bionic only declare it, so the link fails. Probe the libc once and
+# fall back to pthreads automatically. Override with UM_CONTEXT=ucontext or
+# UM_CONTEXT=pthread.
+UM_CONTEXT ?= auto
+ifeq ($(UM_CONTEXT),auto)
+UM_CONTEXT_PROBE := $(shell printf '#include <ucontext.h>\nint main(void){ucontext_t c; return getcontext(&c);}\n' | $(CC) -x c - -o /dev/null >/dev/null 2>&1 && echo yes || echo no)
+ifeq ($(UM_CONTEXT_PROBE),yes)
+UM_CONTEXT := ucontext
+else
+UM_CONTEXT := pthread
+endif
+endif
+ifeq ($(filter ucontext pthread,$(UM_CONTEXT)),)
+$(error UM_CONTEXT must be "auto", "ucontext" or "pthread")
+endif
+
 ifeq ($(UM_PLATFORM),linux)
+ifeq ($(UM_CONTEXT),pthread)
+UM_PLATFORM_SOURCE = pexpert/um/pe_linux_pthread.c
+UM_PLATFORM_LIBS = -lpthread
+else
 UM_PLATFORM_SOURCE = pexpert/um/pe_linux.c
 UM_PLATFORM_LIBS =
+endif
 else ifeq ($(UM_PLATFORM),windows)
 UM_PLATFORM_SOURCE = pexpert/um/pe_w64.c
 UM_PLATFORM_LIBS =
@@ -80,7 +113,7 @@ GOTHC_LUA_OBJECTS = $(patsubst %.c,$(BUILD_DIR)/gothclua/%.o,$(LUA_SOURCES))
 GOTHC_LUA_MAIN_OBJECT = $(BUILD_DIR)/gothclua/lua.o
 GOTHC_START_OBJECT = $(patsubst libc/src/%.S,$(BUILD_DIR)/gothclua/%.o,$(GOTHC_START_SOURCE))
 LIBRARY = $(BUILD_DIR)/libgothrtos.a
-UM_PLATFORM_STAMP = $(BUILD_DIR)/.um_platform_$(UM_PLATFORM)
+UM_PLATFORM_STAMP = $(BUILD_DIR)/.um_platform_$(UM_PLATFORM)_$(UM_CONTEXT)
 KAPI_LIBRARY = $(BUILD_DIR)/libkapi.a
 KLIB_LIBRARY = $(BUILD_DIR)/libklib.a
 ifeq ($(KLIB_ENABLED),yes)

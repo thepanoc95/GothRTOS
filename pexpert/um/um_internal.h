@@ -3,6 +3,15 @@
 
 #include "gothrtos/kernel.h"
 
+/* LLVM-style target triple of the compiler that built this port, e.g.
+ * "x86_64-linux-gnu" or "x86_64-w64-mingw32". GNUmakefile asks the compiler
+ * for its own answer (clang's -print-target-triple, falling back to gcc's
+ * -dumpmachine) and passes it here, so the user-mode platform identifier
+ * always names the toolchain that actually produced the binary. */
+#ifndef GOTH_UM_TARGET_TRIPLE
+#define GOTH_UM_TARGET_TRIPLE "unknown"
+#endif
+
 #define GOTH_UM_GUARD_WORD UINT32_C(0x474F5448)
 #define GOTH_UM_GUARD_XOR UINT32_C(0xA5A5A5A5)
 
