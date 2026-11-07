@@ -292,6 +292,8 @@ class NewPortScreen(Screen):
         ("ARMv6-M (Cortex-M0+)", "armv6m"),
         ("ARMv8-M (Cortex-M33)", "armv8m"),
         ("AMD64 (x86-64)", "amd64"),
+        ("x86 PC", "i386"),
+        ("RISC-V", "rv32"),
     ]
 
     def compose(self) -> ComposeResult:
