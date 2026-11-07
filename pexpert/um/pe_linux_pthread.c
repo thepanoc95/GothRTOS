@@ -3,7 +3,7 @@
  * pthread per GothRTOS task.
  *
  * glibc implements the ucontext family (getcontext/makecontext/swapcontext)
- * that pexpert/um/pe_linux.c builds on. musl and Android's bionic only
+ * that pexpert/um/pe_linux.c builds on. musl and some other libcs only
  * declare those functions in <ucontext.h>; they have no implementation, so
  * the ucontext expert fails to link there. This expert provides the same
  * um_internal.h contract without them: every task runs on its own pthread

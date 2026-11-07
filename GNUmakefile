@@ -60,7 +60,7 @@ endif
 # The Linux user-mode expert can drive tasks with the ucontext family
 # (getcontext/makecontext/swapcontext) or, where the libc does not implement
 # them, with one pthread per task. glibc implements ucontext; musl and
-# Android's bionic only declare it, so the link fails. Probe the libc once and
+# some other libcs only declare it, so the link fails. Probe the libc once and
 # fall back to pthreads automatically. Override with UM_CONTEXT=ucontext or
 # UM_CONTEXT=pthread.
 UM_CONTEXT ?= auto
@@ -96,6 +96,11 @@ SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c rtos/userapi.c \
 	pexpert/common.c $(UM_PLATFORM_SOURCE) \
 	os/init/95exc.binfmt.c os/loader/fdt.c os/loader/cmdline.c \
 	os/loader/sparsekernel.c
+GOTHGFX_OBJECT = $(BUILD_DIR)/System/gothgfx/gothgfx.o $(BUILD_DIR)/System/gothgfx/gothgfx_lvgl.o
+GOTHGFX_TEST_BINARY = $(BUILD_DIR)/test_gothgfx
+LVGL_SOURCES = $(shell find System/lvgl/src -name '*.c' -print)
+LVGL_OBJECTS = $(patsubst System/lvgl/src/%.c,$(BUILD_DIR)/lvgl/%.o,$(LVGL_SOURCES))
+LVGL_LIBRARY = $(BUILD_DIR)/liblvgl.a
 OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 KAPI_OBJECT = $(BUILD_DIR)/libkapi/kapi.o
 KLIB_SOURCES = kalloc.c kbarena.c keigen.c kexpr.c kmath.c kmempool.c knhx.c ksa.c kson.c kstring.c ksw.c kthread.c
@@ -144,8 +149,8 @@ HDF_TEST_BINARY = $(BUILD_DIR)/test_hdf
 SPARSE_TEST_BINARY = $(BUILD_DIR)/test_sparsekernel
 SYSGOTH_TEST_BINARY = $(BUILD_DIR)/test_sysgoth
 SPARSEKERNEL_GEN = $(BUILD_DIR)/sparsekernel-gen
-PYTHON ?= python3
-BUILDUI_TEST = tests/test_buildui.py
+BUN ?= bun
+OSBUILD_TEST = osbuild/tests
 KERNEL_BINARY = $(BUILD_DIR)/kern.ldr
 ARM_CC ?= arm-none-eabi-gcc
 ARM_OBJCOPY ?= arm-none-eabi-objcopy
@@ -304,7 +309,7 @@ endif
 	pico pico2 \
 	build-ui
 
-all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY)
+all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY) $(GOTHGFX_OBJECT) $(LVGL_LIBRARY)
 
 kernel: $(KERNEL_BINARY)
 
@@ -338,12 +343,31 @@ pico: $(PICO_ELF) $(PICO_IMG3)
 
 pico2: $(PICO2_ELF) $(PICO2_IMG3)
 
-# Launch the build system UI (needs textual; pip install textual pyfiglet).
+# Launch the build system terminal UI (needs Bun: https://bun.sh).
 build-ui:
-	$(PYTHON) OSBuild.py
+	$(BUN) run osbuild/src/cli.ts
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/lvgl/%.o: System/lvgl/src/%.c System/lvgl/lv_conf.h
+	@mkdir -p $(dir $@)
+	$(CC) -std=c11 -O2 -Wall -Wextra -pedantic -Wno-unused-parameter -ISystem/lvgl -ISystem/lvgl/src -c $< -o $@
+
+$(LVGL_LIBRARY): $(LVGL_OBJECTS)
+	$(AR) rcs $@ $^
+
+$(BUILD_DIR)/System/gothgfx/gothgfx.o: System/gothgfx/gothgfx.c System/gothgfx/gothgfx.h System/gothgfx/gothgfx_font.h
+	@mkdir -p $(dir $@)
+	$(CC) $(LUA_CPPFLAGS) -ISystem/gothgfx -std=c11 -O2 -Wall -Wextra -Werror -pedantic -c $< -o $@
+
+$(BUILD_DIR)/System/gothgfx/gothgfx_lvgl.o: System/gothgfx/gothgfx_lvgl.c System/gothgfx/gothgfx_lvgl.h $(LVGL_LIBRARY)
+	@mkdir -p $(dir $@)
+	$(CC) $(LUA_CPPFLAGS) -ISystem/gothgfx -ISystem/lvgl -ISystem/lvgl/src -std=c11 -O2 -Wall -Wextra -Werror -pedantic -c $< -o $@
+
+
+$(GOTHGFX_TEST_BINARY): tests/test_gothgfx.c $(GOTHGFX_OBJECT) $(LUA_LIBRARY)
+	$(CC) $(LUA_CPPFLAGS) -ISystem/gothgfx $(CFLAGS) $< $(GOTHGFX_OBJECT) -L$(BUILD_DIR) -llvgl -llua $(LUA_LIBS) -o $@
 
 $(ARM_BUILD_DIR):
 	@mkdir -p $(ARM_BUILD_DIR)
@@ -506,6 +530,11 @@ $(BUILD_DIR)/libc/%.o: libc/src/%.c $(LIBC_HEADERS) | $(BUILD_DIR)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(LIBC_CPPFLAGS) $(LIBC_CFLAGS) -c $< -o $@
 
+# The GothC Lua interpreter links this archive without the host libc. Keep
+# stack protection disabled for its libc objects even when the host compiler
+# enables it by default.
+$(BUILD_DIR)/libc/%.o: LIBC_CFLAGS += -fno-stack-protector
+
 $(LIBC_LIBRARY): $(LIBC_OBJECTS)
 	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
 	$(AR) rcs $@ $^
@@ -613,7 +642,7 @@ $(USERAPI_LUA_STAMP): tests/test_userapi.lua $(KERNEL_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi lua binding tests..."
 	$(KERNEL_BINARY) -init=tests/test_userapi.lua -verbose=0
 
-test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
+test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY) $(GOTHGFX_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
 	$(KLIB_TEST_COMMAND)
@@ -635,6 +664,7 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(SYSGOTH_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi tests..."
 	$(USERAPI_TEST_BINARY)
+	$(GOTHGFX_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running system runtime smoke tests..."
 	$(KERNEL_BINARY) -kern_sym=/kern.symbols -verbose=0 -root=/img/root.bin -mem=dynamic -drv_root=/kern.builts
 	$(KERNEL_BINARY) -init=tests/test_system.lua -verbose=0
@@ -647,7 +677,7 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(LUA_INTERPRETER_BINARY) tests/test_userkernel.lua
 	$(KERNEL_BINARY) -init=tests/test_userkernel.lua -verbose=0
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running build system UI tests..."
-	$(PYTHON) $(BUILDUI_TEST)
+	$(BUN) test $(OSBUILD_TEST)
 
 clean:
 	@printf "  $(COLOR_RM)%-12s$(RESET) %s\n" "RM" "$(BUILD_DIR)"

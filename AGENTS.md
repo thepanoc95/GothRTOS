@@ -21,7 +21,7 @@ make rpi-zero   # Raspberry Pi Zero image
 make pico       # Raspberry Pi Pico (RP2040, Cortex-M0+) image
 make pico2      # Raspberry Pi Pico 2 (RP2350, Cortex-M33) image
 make amd64      # AMD64 bare-metal image (QEMU x86_64 "pc")
-make build-ui   # launch the build system UI (needs textual, pyfiglet)
+make build-ui   # launch the build system terminal UI (needs Bun)
 ```
 
 Every embedded target (`arm32`, `rpi-zero`, `pico`, `pico2`, `amd64`) also
@@ -61,7 +61,7 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
   `pexpert/um/pe_w64.c`, `pexpert/arm/`, `pexpert/amd64/`). The ops table lives
   in `pexpert/pe_internal.h`; add new ops to every port. On Linux the makefile
   probes the host libc: glibc implements the `ucontext` family, so it uses
-  `pe_linux.c`; musl and Android's bionic only declare
+  `pe_linux.c`; musl and some other libcs only declare
   `getcontext`/`makecontext`/`swapcontext` and fail to link, so those use
   `pe_linux_pthread.c` (one pthread per task with a scheduler token). Force one
   with `make UM_CONTEXT=ucontext` or `UM_CONTEXT=pthread`. The user-mode
@@ -81,15 +81,15 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
   legacy `goth_*` globals). The `base/*` modules forward to it when present.
   Wired into every Lua state by `open_environment()` in `os/init/luaexec.c`.
 - `os/System.lua` — system state module loaded by the boot script.
-- `OSBuild.py` — the build system UI (Textual). A thin front end over the
-  `buildui/` package: browse boards and ports, see each board's architecture,
-  devices and support status, build/run/test a board with live output, and
-  scaffold a new port. `buildui/registry.py` holds the board/device data and
-  the port scaffolder; `buildui/runner.py` wraps `make`. Neither imports
-  Textual, so the registry is usable from scripts. `python OSBuild.py --list`
-  and `--list-ports` print the same data headlessly.
+- `osbuild/` — the build system terminal UI, written in TypeScript for Bun
+  and built on OpenTUI. `osbuild/src/registry.ts` holds the board/device data
+  and the port scaffolder; `osbuild/src/runner.ts` wraps `make`;
+  `osbuild/src/process.ts` streams output; `osbuild/src/tui.ts` builds the
+  OpenTUI render tree and handles keys; `osbuild/src/cli.ts` is the entry
+  point. `bun run osbuild/src/cli.ts --list` and `--list-ports` print the same
+  data headlessly. `make build-ui` starts the TUI.
   When adding a board or port, add a `Board` entry (and, for a new port,
-  teach `discover_ports` its architecture) so the UI can see it.
+  teach `discoverPorts` its architecture) so the UI can see it.
 
 ## Conventions
 
@@ -122,7 +122,7 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
   through the kernel.
 - `tests/test_sparsekernel.c`, `tests/test_sysgoth.c` — the SparseKernel.img3
   format and the SYSGOTH loader core.
-- `tests/test_buildui.py` — the build system UI core (registry, makefile
-  introspection, port scaffolder, make runner). Runs under `make test` via
-  `$(PYTHON)`; the Textual app smoke test is skipped when Textual is absent.
+- `osbuild/tests/*.test.ts` — the build system UI core (registry, makefile
+  introspection, port scaffolder, make runner) and the OpenTUI render tree.
+  Runs under `make test` via `bun test`.
 

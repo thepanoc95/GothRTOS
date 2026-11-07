@@ -1,7 +1,4 @@
 cmake_minimum_required(VERSION 3.13)
-include(cmake/pico_sdk_import.cmake)
-project(sysgoth C CXX)
-pico_sdk_init()
 
 # SYSGOTH is the GothRTOS first-stage bootloader for the Pico family. It links
 # the portable loader core, the board glue and the shared SparseKernel parser
@@ -9,7 +6,23 @@ pico_sdk_init()
 #
 #   -DSG_TARGET=pico   (RP2040, default)
 #   -DSG_TARGET=pico2  (RP2350)
+#
+# SG_TARGET selects the Pico SDK board. PICO_BOARD has to be set before
+# pico_sdk_init(), because the SDK reads the board header (and therefore the
+# platform, rp2040 vs rp2350) while initialising.
 set(SG_TARGET "pico" CACHE STRING "SYSGOTH target: pico or pico2")
+
+if(SG_TARGET STREQUAL "pico2")
+    set(PICO_BOARD "pico2" CACHE STRING "Pico SDK board" FORCE)
+elseif(SG_TARGET STREQUAL "pico")
+    set(PICO_BOARD "pico" CACHE STRING "Pico SDK board" FORCE)
+else()
+    message(FATAL_ERROR "SG_TARGET must be 'pico' or 'pico2'")
+endif()
+
+include(cmake/pico_sdk_import.cmake)
+project(sysgoth C CXX)
+pico_sdk_init()
 
 add_executable(sysgoth
         sysgoth.c
@@ -26,11 +39,6 @@ target_link_libraries(sysgoth pico_stdlib)
 
 if(SG_TARGET STREQUAL "pico2")
     target_compile_definitions(sysgoth PRIVATE SG_TARGET_RP2350=1)
-    pico_set_board_type(sysgoth pico2)
-elseif(SG_TARGET STREQUAL "pico")
-    pico_set_board_type(sysgoth pico)
-else()
-    message(FATAL_ERROR "SG_TARGET must be 'pico' or 'pico2'")
 endif()
 
 # Route stdio to the UART so the loader banner is visible.
