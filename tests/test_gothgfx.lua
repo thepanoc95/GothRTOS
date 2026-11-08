@@ -155,4 +155,20 @@ check(not ok, "setRotation rejects invalid rotation")
 
 display:close()
 
+-- The userland toolkit accepts the real GothGfx userdata surface.
+package.path = "System/?.lua;" .. package.path
+local ui = require("ui")
+local ui_display = gfx.create(80, 48, 32)
+local canvas, canvas_error = ui.new(ui_display)
+check(canvas ~= nil, canvas_error)
+check(not canvas.capabilities.blur, "GothGfx backend defaults to no blur")
+canvas:begin_frame()
+canvas:panel({x = 2, y = 2, width = 60, height = 40})
+canvas:label({x = 6, y = 6, text = "UI"})
+check_equal(ui_display:getPixel(2, 2), canvas.theme.border,
+            "UI panel reaches GothGfx surface")
+check_equal(ui_display:getPixel(0, 0), canvas.theme.background,
+            "UI dark background reaches GothGfx surface")
+ui_display:close()
+
 print("test_gothgfx.lua: all checks passed")
