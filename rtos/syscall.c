@@ -32,6 +32,9 @@ goth_syscall_result_t goth_syscall_dispatch(
     }
 
     switch (request->number) {
+    case GOTH_SYSCALL_GET_ABI_VERSION:
+        return syscall_result(GOTH_STATUS_OK, GOTH_SYSCALL_ABI_VERSION);
+
     case GOTH_SYSCALL_TASK_YIELD:
         if (goth_kernel_current_task() == NULL) {
             return syscall_result(GOTH_STATUS_BAD_STATE, 0U);

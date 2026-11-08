@@ -347,3 +347,33 @@ goth_status_t goth_task_resume(goth_task_t *task)
     task->state = GOTH_TASK_READY;
     return GOTH_STATUS_OK;
 }
+
+goth_status_t goth_task_set_priority(goth_task_t *task, uint8_t priority)
+{
+    if (!kernel_initialized) {
+        return GOTH_STATUS_NOT_INITIALIZED;
+    }
+    if (task == NULL) {
+        return GOTH_STATUS_INVALID_ARGUMENT;
+    }
+    if (!task_is_registered(task) || task->state == GOTH_TASK_TERMINATED) {
+        return GOTH_STATUS_BAD_STATE;
+    }
+    task->priority = priority;
+    return GOTH_STATUS_OK;
+}
+
+goth_task_t *goth_task_find(goth_task_id_t id)
+{
+    goth_task_t *task;
+
+    if (!kernel_initialized || id == 0U) {
+        return NULL;
+    }
+    for (task = task_list; task != NULL; task = task->next) {
+        if (task->id == id) {
+            return task;
+        }
+    }
+    return NULL;
+}
