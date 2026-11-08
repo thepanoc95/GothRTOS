@@ -17,3 +17,16 @@ bun run osbuild/src/cli.ts --list
 ```
 
 See `osbuild/README.md` for details.
+
+## LVGL and GothLibC
+
+The vendored LVGL is version 9.2.2. Its configured C-library adapters use
+GothLibC for allocation (`malloc`, `realloc`, `free`), string/memory
+operations (`memcpy`, `memset`, `memmove`, `memcmp`, `strlen`, `strncpy`,
+`strcpy`, `strcmp`, `strcat`, `strncat`), and formatting (`vsnprintf`).
+These adapters let the freestanding LVGL archive link against GothLibC; the
+normal GothLibC process entry initializes its heap before LVGL allocation.
+
+`make test </dev/null` includes a freestanding LVGL smoke test that boots via
+GothLibC, initializes LVGL, exercises its allocator and formatter, and runs on
+the Linux host. It does not exercise a physical display or device driver.

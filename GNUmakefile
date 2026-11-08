@@ -101,6 +101,10 @@ GOTHGFX_TEST_BINARY = $(BUILD_DIR)/test_gothgfx
 LVGL_SOURCES = $(shell find System/lvgl/src -name '*.c' -print)
 LVGL_OBJECTS = $(patsubst System/lvgl/src/%.c,$(BUILD_DIR)/lvgl/%.o,$(LVGL_SOURCES))
 LVGL_LIBRARY = $(BUILD_DIR)/liblvgl.a
+LVGL_LIBC_TEST_BINARY = $(BUILD_DIR)/test_lvgl_libc
+LVGL_CPPFLAGS ?= $(LIBC_CPPFLAGS) -ISystem/lvgl -ISystem/lvgl/src
+LVGL_CFLAGS ?= -std=c11 -O2 -Wall -Wextra -pedantic \
+	-Wno-unused-parameter -ffreestanding -fno-builtin -fno-stack-protector
 OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 KAPI_OBJECT = $(BUILD_DIR)/libkapi/kapi.o
 KLIB_SOURCES = kalloc.c kbarena.c keigen.c kexpr.c kmath.c kmempool.c knhx.c ksa.c kson.c kstring.c ksw.c kthread.c
@@ -350,9 +354,9 @@ build-ui:
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/lvgl/%.o: System/lvgl/src/%.c System/lvgl/lv_conf.h
+$(BUILD_DIR)/lvgl/%.o: System/lvgl/src/%.c System/lvgl/lv_conf.h $(LIBC_HEADERS)
 	@mkdir -p $(dir $@)
-	$(CC) -std=c11 -O2 -Wall -Wextra -pedantic -Wno-unused-parameter -ISystem/lvgl -ISystem/lvgl/src -c $< -o $@
+	$(CC) $(LVGL_CPPFLAGS) $(LVGL_CFLAGS) -c $< -o $@
 
 $(LVGL_LIBRARY): $(LVGL_OBJECTS)
 	$(AR) rcs $@ $^
@@ -368,6 +372,12 @@ $(BUILD_DIR)/System/gothgfx/gothgfx_lvgl.o: System/gothgfx/gothgfx_lvgl.c System
 
 $(GOTHGFX_TEST_BINARY): tests/test_gothgfx.c $(GOTHGFX_OBJECT) $(LUA_LIBRARY)
 	$(CC) $(LUA_CPPFLAGS) -ISystem/gothgfx $(CFLAGS) $< $(GOTHGFX_OBJECT) -L$(BUILD_DIR) -llvgl -llua $(LUA_LIBS) -o $@
+
+$(LVGL_LIBC_TEST_BINARY): tests/test_lvgl_libc.c $(LVGL_LIBRARY) $(LIBC_LIBRARY) $(GOTHC_START_OBJECT) $(LIBC_HEADERS) | $(BUILD_DIR)
+	$(CC) -std=c11 $(LIBC_CPPFLAGS) -ISystem/lvgl -ISystem/lvgl/src \
+		$(GOTHC_LUA_CFLAGS) $(GOTHC_LUA_LDFLAGS) $< $(GOTHC_START_OBJECT) \
+		-Wl,--start-group -L$(BUILD_DIR) -llvgl -lgothc -Wl,--end-group \
+		-lgcc -o $@
 
 $(ARM_BUILD_DIR):
 	@mkdir -p $(ARM_BUILD_DIR)
@@ -642,12 +652,14 @@ $(USERAPI_LUA_STAMP): tests/test_userapi.lua $(KERNEL_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi lua binding tests..."
 	$(KERNEL_BINARY) -init=tests/test_userapi.lua -verbose=0
 
-test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY) $(GOTHGFX_TEST_BINARY)
+test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LVGL_LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY) $(GOTHGFX_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
 	$(KLIB_TEST_COMMAND)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running libc tests..."
 	$(LIBC_TEST_BINARY)
+	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running GothLibC-backed LVGL smoke test..."
+	$(LVGL_LIBC_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running luaexec tests..."
 	$(LUAEXEC_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running binfmt tests..."
