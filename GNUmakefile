@@ -671,6 +671,7 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(KERNEL_BINARY) -init=os/init/init.d/init.lua -root=/img/root.bin -drv_root=/kern.builts -mem=dynamic -verbose=0
 	$(LUA_INTERPRETER_BINARY) tests/test_system.lua
 	$(LUA_INTERPRETER_BINARY) tests/test_init_modules.lua
+	$(LUA_INTERPRETER_BINARY) tests/test_ui.lua
 	$(LUA_INTERPRETER_BINARY) tests/test_userland_api.lua
 	$(KERNEL_BINARY) -init=tests/test_userland_api.lua -verbose=0
 	$(KERNEL_BINARY) -init=tests/test_kernlib.lua -verbose=0
