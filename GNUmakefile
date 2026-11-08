@@ -3,7 +3,7 @@ AR ?= ar
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -static
 CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/um -static
 BUILD_DIR ?= build
-KLIB_CPPFLAGS ?= -Ilib -static
+KLIB_CPPFLAGS ?= -Ilib/klib -static
 KLIB_CFLAGS ?= -std=gnu11 -O2 -pthread -static
 KLIB_LIBS ?= -lm -pthread
 LIBC_CPPFLAGS ?= -Ilibc/include -Iinclude -static
@@ -526,7 +526,7 @@ $(KAPI_LIBRARY): $(KAPI_OBJECT)
 	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
 	$(AR) rcs $@ $^
 
-$(BUILD_DIR)/klib/%.o: lib/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/klib/%.o: lib/klib/%.c | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(KLIB_CPPFLAGS) $(KLIB_CFLAGS) -c $< -o $@
@@ -683,6 +683,7 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LVGL_LIBC_TEST_B
 	$(KERNEL_BINARY) -init=os/init/init.d/init.lua -root=/img/root.bin -drv_root=/kern.builts -mem=dynamic -verbose=0
 	$(LUA_INTERPRETER_BINARY) tests/test_system.lua
 	$(LUA_INTERPRETER_BINARY) tests/test_init_modules.lua
+	$(LUA_INTERPRETER_BINARY) tests/test_ui.lua
 	$(LUA_INTERPRETER_BINARY) tests/test_userland_api.lua
 	$(KERNEL_BINARY) -init=tests/test_userland_api.lua -verbose=0
 	$(KERNEL_BINARY) -init=tests/test_kernlib.lua -verbose=0

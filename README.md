@@ -30,3 +30,12 @@ normal GothLibC process entry initializes its heap before LVGL allocation.
 `make test </dev/null` includes a freestanding LVGL smoke test that boots via
 GothLibC, initializes LVGL, exercises its allocator and formatter, and runs on
 the Linux host. It does not exercise a physical display or device driver.
+
+## GothRTOS userland UI
+
+`System/ui.lua` provides a dark-first UI toolkit and a single-owner foreground
+UI service over the existing GothGfx framebuffer and input API. The service
+owns display polling, focused-app event routing, and redraw/present cycles;
+see [`System/ui/README.md`](System/ui/README.md) for the API and hardware
+capability limits. The framework is intentionally software-rendered and does
+not add a display or input driver to bare-metal targets.
