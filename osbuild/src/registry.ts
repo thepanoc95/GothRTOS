@@ -713,28 +713,35 @@ export function scaffoldPort(
   const cPath = join(directory, `pe_${slug}.c`);
   const ldPath = join(directory, `${slug}.ld`);
   const readmePath = join(directory, "README.md");
+  const files: Array<[string, string]> = [
+    [cPath, fill(PORT_TEMPLATE_C, { prefix, display })],
+    [ldPath, fill(PORT_TEMPLATE_LD, { display, load_address: loadAddress })],
+    [
+      readmePath,
+      fill(PORT_TEMPLATE_README, {
+        display,
+        arch: "arm32",
+        prefix,
+      }),
+    ],
+  ];
 
-  writeFileSync(
-    cPath,
-    fill(PORT_TEMPLATE_C, { prefix, display }),
-    "utf8",
-  );
-  writeFileSync(
-    ldPath,
-    fill(PORT_TEMPLATE_LD, { display, load_address: loadAddress }),
-    "utf8",
-  );
-  writeFileSync(
-    readmePath,
-    fill(PORT_TEMPLATE_README, {
-      display,
-      arch: "arm32",
-      prefix,
-    }),
-    "utf8",
-  );
+  const existing = files.find(([path]) => existsSync(path));
+  if (existing) {
+    throw new Error(`port scaffold file already exists: ${existing[0]}`);
+  }
+  for (const [path, content] of files) {
+    try {
+      writeFileSync(path, content, { encoding: "utf8", flag: "wx" });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+        throw new Error(`port scaffold file already exists: ${path}`);
+      }
+      throw error;
+    }
+  }
 
-  return { directory, files: [cPath, ldPath, readmePath] };
+  return { directory, files: files.map(([path]) => path) };
 }
 
 /** Tiny {name} template filler that does not treat ${...} as JS syntax. */

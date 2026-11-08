@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -124,6 +131,21 @@ describe("port scaffolding", () => {
 
   test("rejects unknown architectures", () => {
     expect(() => scaffoldPort("sparc", "board")).toThrow();
+  });
+
+  test("refuses to overwrite any existing scaffold output", () => {
+    const temporary = mkdtempSync(join(tmpdir(), "osbuild-port-"));
+    try {
+      const existingLinker = join(temporary, "bcm2835.ld");
+      writeFileSync(existingLinker, "keep this linker script\n");
+
+      expect(() => scaffoldPort("arm32", "BCM2835", undefined, temporary))
+        .toThrow("port scaffold file already exists");
+      expect(readFileSync(existingLinker, "utf8")).toBe("keep this linker script\n");
+      expect(existsSync(join(temporary, "pe_bcm2835.c"))).toBe(false);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
   });
 });
 
