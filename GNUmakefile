@@ -92,7 +92,7 @@ $(error UM_PLATFORM must be "linux" or "windows")
 endif
 
 SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c rtos/userapi.c \
-	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c rtos/hdf.c \
 	pexpert/common.c $(UM_PLATFORM_SOURCE) \
 	os/init/95exc.binfmt.c os/loader/fdt.c os/loader/cmdline.c \
 	os/loader/sparsekernel.c
@@ -164,7 +164,7 @@ ARM_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/arm32.ld \
 	-Wl,--gc-sections -Wl,-Map=$(ARM_BUILD_DIR)/kern.map
 ARM_LIBS ?= -lgcc
 ARM_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
-	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c rtos/hdf.c \
 	pexpert/common.c \
 	pexpert/arm/pe_arm32.c pexpert/arm/pe_arm32_qemu.c \
 	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
@@ -200,7 +200,7 @@ RPI_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/bcm2835.ld \
 	-Wl,--gc-sections -Wl,-Map=$(RPI_BUILD_DIR)/kernel.map
 RPI_LIBS ?= -lgcc
 RPI_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
-	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+	rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c rtos/hdf.c \
 	pexpert/common.c \
 	pexpert/arm/pe_arm32.c pexpert/arm/pe_bcm2835.c \
 	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
@@ -224,7 +224,7 @@ AMD64_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/amd64/amd64.ld \
         -Wl,--gc-sections -Wl,-Map=$(AMD64_BUILD_DIR)/kernel.map -no-pie
 AMD64_LIBS ?= -lgcc
 AMD64_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
-        rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+        rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c rtos/hdf.c \
         pexpert/common.c pexpert/amd64/pe_amd64.c pexpert/amd64/pe_amd64_qemu.c \
         pexpert/amd64/amd64_libc.c os/loader/kern_amd64.c
 AMD64_ASM_SOURCES = pexpert/amd64/amd64_start.S
@@ -253,7 +253,7 @@ PICO_COMMON_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic \
         -fno-unwind-tables -fno-asynchronous-unwind-tables \
         -ffunction-sections -fdata-sections -O2 -g
 PICO_C_SOURCES = rtos/kernel.c rtos/sched.c rtos/ipc.c rtos/syscall.c \
-        rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c kernel/hdf/hdf.c \
+        rtos/klog.c rtos/mem.c rtos/vfs.c rtos/nanokernel.c rtos/hdf.c \
         pexpert/common.c pexpert/arm/pe_cortexm.c pexpert/arm/pe_rp2040.c \
         pexpert/arm/cm_libc.c os/loader/kern_cm.c
 PICO_ASM_SOURCES = pexpert/arm/cm_start.S

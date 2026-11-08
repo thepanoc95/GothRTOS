@@ -50,10 +50,13 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
 ## Layout
 
 - `rtos/` — kernel core: `kernel.c` (lifecycle/policy wiring), `sched.c`
-  (task scheduler), `ipc.c` (endpoints), `syscall.c` (syscall dispatch).
+  (task scheduler), `ipc.c` (endpoints), `syscall.c` (syscall dispatch),
+  `hdf.c` (hardware driver framework).
   `userapi.c` is the userland support library that lives beside the kernel but
   is not part of it. All of `rtos/` is shared by the user-mode and bare-metal
   builds, so it must stay freestanding.
+- `kernel/` — Lua userland kernel services, modes, and profiles; kernel C
+  implementation belongs in `rtos/`.
 - `include/gothrtos/` — public headers. `userapi.h` is the userland surface.
 - `libkapi/kapi.c` — thin kernel API wrapper over the syscalls.
 - `pexpert/` — platform experts. `common.c` dispatches to per-platform ops
@@ -125,4 +128,3 @@ cc -std=c11 -Wall -Wextra -Werror -pedantic -ffreestanding -fno-builtin \
 - `osbuild/tests/*.test.ts` — the build system UI core (registry, makefile
   introspection, port scaffolder, make runner) and the OpenTUI render tree.
   Runs under `make test` via `bun test`.
-
