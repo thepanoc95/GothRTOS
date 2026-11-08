@@ -78,6 +78,10 @@ static void test_scheduler(void)
                             empty_task, NULL) == GOTH_STATUS_OK);
     assert(goth_task_create(&task_c, stack_c, sizeof(stack_c), 2U,
                             empty_task, NULL) == GOTH_STATUS_OK);
+    assert(goth_task_find(task_a.id) == &task_a);
+    assert(goth_task_find(task_b.id) == &task_b);
+    assert(goth_task_find(0U) == NULL);
+    assert(goth_task_find(UINT32_MAX) == NULL);
 
     selected = goth_kernel_schedule();
     assert(selected == &task_b);
@@ -95,8 +99,29 @@ static void test_scheduler(void)
     assert(goth_task_resume(&task_b) == GOTH_STATUS_OK);
     assert(goth_task_exit() == &task_b);
     assert(task_c.state == GOTH_TASK_TERMINATED);
+    assert(goth_task_set_priority(&task_c, 1U) == GOTH_STATUS_BAD_STATE);
     assert(goth_task_destroy(&task_c) == GOTH_STATUS_OK);
     assert(task_c.state == GOTH_TASK_UNUSED);
+    assert(goth_task_find(task_c.id) == NULL);
+}
+
+static void test_task_management(void)
+{
+    goth_task_id_t task_a_id;
+
+    goth_kernel_init();
+    assert(goth_task_create(&task_a, stack_a, sizeof(stack_a), 1U,
+                            empty_task, NULL) == GOTH_STATUS_OK);
+    assert(goth_task_create(&task_b, stack_b, sizeof(stack_b), 2U,
+                            empty_task, NULL) == GOTH_STATUS_OK);
+    task_a_id = task_a.id;
+    assert(goth_kernel_schedule() == &task_b);
+    assert(goth_task_set_priority(&task_a, 3U) == GOTH_STATUS_OK);
+    assert(goth_kernel_schedule() == &task_a);
+    assert(goth_task_exit() == &task_b);
+    assert(goth_task_find(task_a_id) == &task_a);
+    assert(goth_task_destroy(&task_a) == GOTH_STATUS_OK);
+    assert(goth_task_find(task_a_id) == NULL);
 }
 
 static void test_endpoints(void)
@@ -151,6 +176,11 @@ static void test_syscalls(void)
     goth_message_t received;
 
     goth_kernel_init();
+    request.number = GOTH_SYSCALL_GET_ABI_VERSION;
+    result = goth_syscall_dispatch(&request);
+    assert(result.status == GOTH_STATUS_OK);
+    assert(result.value == GOTH_SYSCALL_ABI_VERSION);
+
     assert(goth_task_create(&syscall_task_a, syscall_stack_a,
                             sizeof(syscall_stack_a), 2U, empty_task, NULL) ==
            GOTH_STATUS_OK);
@@ -282,6 +312,7 @@ static void test_kapi(void)
 int main(void)
 {
     test_scheduler();
+    test_task_management();
     test_endpoints();
     test_platform_expert();
     test_syscalls();

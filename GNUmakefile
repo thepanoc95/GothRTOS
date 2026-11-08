@@ -1,5 +1,6 @@
 CC ?= cc
 AR ?= ar
+BUN ?= bun
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -static
 CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/um -static
 BUILD_DIR ?= build
@@ -59,7 +60,7 @@ else
 $(error UM_PLATFORM must be "linux" or "windows")
 endif
 
-SOURCES = rtos/kernel.c rtos/ipc.c rtos/syscall.c rtos/userapi.c pexpert/common.c $(UM_PLATFORM_SOURCE) os/init/95exc.binfmt.c os/loader/fdt.c os/loader/cmdline.c
+SOURCES = rtos/kernel.c rtos/ipc.c rtos/driver.c rtos/syscall.c rtos/userapi.c pexpert/common.c $(UM_PLATFORM_SOURCE) os/init/95exc.binfmt.c os/loader/fdt.c os/loader/cmdline.c
 OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 KAPI_OBJECT = $(BUILD_DIR)/libkapi/kapi.o
 KLIB_SOURCES = kalloc.c kbarena.c keigen.c kexpr.c kmath.c kmempool.c knhx.c ksa.c kson.c kstring.c ksw.c kthread.c
@@ -104,6 +105,7 @@ USERAPI_LUA_STAMP = $(BUILD_DIR)/.userapi_lua_stamp
 BIN_FMT_TEST_BINARY = $(BUILD_DIR)/test_95exc
 FDT_TEST_BINARY = $(BUILD_DIR)/test_fdt
 CMDLINE_TEST_BINARY = $(BUILD_DIR)/test_cmdline
+DRIVER_TEST_BINARY = $(BUILD_DIR)/test_driver
 KERNEL_BINARY = $(BUILD_DIR)/kern.ldr
 ARM_CC ?= arm-none-eabi-gcc
 ARM_OBJCOPY ?= arm-none-eabi-objcopy
@@ -116,7 +118,7 @@ ARM_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic \
 ARM_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/arm32.ld \
 	-Wl,--gc-sections -Wl,-Map=$(ARM_BUILD_DIR)/kern.map
 ARM_LIBS ?= -lgcc
-ARM_C_SOURCES = rtos/kernel.c rtos/ipc.c rtos/syscall.c pexpert/common.c \
+ARM_C_SOURCES = rtos/kernel.c rtos/ipc.c rtos/driver.c rtos/syscall.c pexpert/common.c \
 	pexpert/arm/pe_arm32.c pexpert/arm/pe_arm32_qemu.c \
 	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
 ARM_ASM_SOURCES = pexpert/arm/arm32_start.S
@@ -126,6 +128,7 @@ ARM_ELF = $(ARM_BUILD_DIR)/kern.elf
 ARM_BIN = $(ARM_BUILD_DIR)/kern.bin
 ARM_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
 	include/gothrtos/um.h include/gothrtos/arm32.h \
+	include/gothrtos/driver.h \
 	pexpert/pe_internal.h pexpert/arm/um_internal.h pexpert/arm/pe_arm32.h
 QEMU_ARM ?= qemu-system-arm
 QEMU_ARM_FLAGS ?= -M virt -cpu cortex-a15 -m 128M -nographic \
@@ -147,7 +150,7 @@ RPI_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic \
 RPI_LDFLAGS ?= -nostdlib -nostartfiles -T pexpert/arm/bcm2835.ld \
 	-Wl,--gc-sections -Wl,-Map=$(RPI_BUILD_DIR)/kernel.map
 RPI_LIBS ?= -lgcc
-RPI_C_SOURCES = rtos/kernel.c rtos/ipc.c rtos/syscall.c pexpert/common.c \
+RPI_C_SOURCES = rtos/kernel.c rtos/ipc.c rtos/driver.c rtos/syscall.c pexpert/common.c \
 	pexpert/arm/pe_arm32.c pexpert/arm/pe_bcm2835.c \
 	pexpert/arm/arm32_libc.c os/loader/kern_arm.c
 RPI_ASM_SOURCES = pexpert/arm/arm32_start.S
@@ -174,7 +177,7 @@ ifndef V
 .SILENT:
 endif
 
-.PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
+.PHONY: all test test-osbuild clean kernel lua build-ui arm32 run-arm32 test-arm32 \
 	rpi-zero run-rpi-zero test-rpi-zero
 
 all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNEL_BINARY)
@@ -182,6 +185,12 @@ all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRAR
 kernel: $(KERNEL_BINARY)
 
 lua: $(LUA_INTERPRETER_BINARY)
+
+build-ui:
+	cd osbuild && $(BUN) run start
+
+test-osbuild:
+	cd osbuild && $(BUN) test tests && $(BUN) run typecheck
 
 arm32: $(ARM_ELF) $(ARM_BIN)
 
@@ -244,7 +253,7 @@ $(RPI_IMG): $(RPI_ELF)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
 	$(RPI_OBJCOPY) -O binary $< $@
 
-$(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.c include/gothrtos/kernel.h include/gothrtos/syscall.h include/gothrtos/um.h include/gothrtos/pexpert.h include/gothrtos/95exc.h include/gothrtos/fdt.h include/gothrtos/cmdline.h include/gothrtos/driver.h pexpert/pe_internal.h pexpert/um/um_internal.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
@@ -372,6 +381,10 @@ $(CMDLINE_TEST_BINARY): tests/test_cmdline.c $(LIBRARY) include/gothrtos/cmdline
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_cmdline.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
+$(DRIVER_TEST_BINARY): tests/test_driver.c $(LIBRARY) include/gothrtos/driver.h | $(BUILD_DIR)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
+	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_driver.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
+
 $(USERAPI_TEST_BINARY): tests/test_userapi.c $(LIBRARY) include/gothrtos/userapi.h include/gothrtos/kernel.h include/gothrtos/pexpert.h include/gothrtos/syscall.h | $(BUILD_DIR)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_userapi.c -L$(BUILD_DIR) -lgothrtos $(UM_PLATFORM_LIBS) -o $@
@@ -380,7 +393,7 @@ $(USERAPI_LUA_STAMP): tests/test_userapi.lua $(KERNEL_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi lua binding tests..."
 	$(KERNEL_BINARY) -init=tests/test_userapi.lua -verbose=0
 
-test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(GOTHGFX_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
+test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(GOTHGFX_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(DRIVER_TEST_BINARY) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
 	$(KLIB_TEST_COMMAND)
@@ -397,6 +410,8 @@ test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BIN
 	$(FDT_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running cmdline tests..."
 	$(CMDLINE_TEST_BINARY)
+	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running driver tests..."
+	$(DRIVER_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi tests..."
 	$(USERAPI_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running system runtime smoke tests..."

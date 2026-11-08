@@ -177,7 +177,7 @@ goth95_status_t goth95_image_open(const goth95_source_t *source,
     image->header.metadata_offset = read_u64(bytes + 52);
     image->header.metadata_size = read_u32(bytes + 60);
 
-    if (image->header.version != 1 ||
+    if (image->header.version != GOTH95_VERSION ||
         image->header.header_size < GOTH95_HEADER_SIZE ||
         image->header.header_size > source->size ||
         image->header.flags != 0 ||

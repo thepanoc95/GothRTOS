@@ -104,7 +104,7 @@ static void setup_header(test_file_t *file,
     uint8_t *header = file->bytes;
 
     memcpy(header, magic, sizeof(magic));
-    put_u16(header + 8, 1);
+    put_u16(header + 8, GOTH95_VERSION);
     put_u16(header + 10, GOTH95_HEADER_SIZE);
     put_u16(header + 12, type);
     put_u16(header + 14, machine);
@@ -658,6 +658,10 @@ static void test_rejects_bad_images(void)
     make_executable(&file);
     put_u16(file.bytes + 14, 62);
     assert(goth95_image_open(&source, &image) == GOTH95_UNSUPPORTED);
+
+    make_executable(&file);
+    put_u16(file.bytes + 8, GOTH95_VERSION + 1U);
+    assert(goth95_image_open(&source, &image) == GOTH95_BAD_FORMAT);
 
     make_executable(&file);
     put_u32(file.bytes + 64 + 4,

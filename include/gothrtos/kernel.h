@@ -66,6 +66,8 @@ goth_status_t goth_task_create(goth_task_t *task,
 goth_status_t goth_task_destroy(goth_task_t *task);
 goth_status_t goth_task_suspend(goth_task_t *task);
 goth_status_t goth_task_resume(goth_task_t *task);
+goth_status_t goth_task_set_priority(goth_task_t *task, uint8_t priority);
+goth_task_t *goth_task_find(goth_task_id_t id);
 goth_task_t *goth_task_yield(void);
 goth_task_t *goth_task_sleep(uint32_t ticks);
 goth_task_t *goth_task_exit(void);

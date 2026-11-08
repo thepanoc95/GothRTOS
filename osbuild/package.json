@@ -1,0 +1,21 @@
+{
+  "name": "gothrtos-osbuild",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The GothRTOS build system terminal UI",
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "list": "bun run src/cli.ts --list",
+    "list-ports": "bun run src/cli.ts --list-ports",
+    "test": "bun test tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.8.3"
+  }
+}
