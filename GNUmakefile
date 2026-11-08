@@ -3,7 +3,7 @@ AR ?= ar
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -static
 CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/um -static
 BUILD_DIR ?= build
-KLIB_CPPFLAGS ?= -Ilib -static
+KLIB_CPPFLAGS ?= -Ilib/klib -static
 KLIB_CFLAGS ?= -std=gnu11 -O2 -pthread -static
 KLIB_LIBS ?= -lm -pthread
 LIBC_CPPFLAGS ?= -Ilibc/include -Iinclude -static
@@ -516,7 +516,7 @@ $(KAPI_LIBRARY): $(KAPI_OBJECT)
 	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
 	$(AR) rcs $@ $^
 
-$(BUILD_DIR)/klib/%.o: lib/%.c | $(BUILD_DIR)
+$(BUILD_DIR)/klib/%.o: lib/klib/%.c | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
 	$(CC) $(KLIB_CPPFLAGS) $(KLIB_CFLAGS) -c $< -o $@
