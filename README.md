@@ -29,3 +29,12 @@ See `osbuild/README.md` for details.
 - `System/` contains the GothRTOS UI bindings and vendored LVGL sources;
   `osbuild/` contains the build-system UI.
 - `tests/` contains the host test suite.
+
+## GothRTOS userland UI
+
+`System/ui.lua` provides a dark-first UI toolkit and a single-owner foreground
+UI service over the existing GothGfx framebuffer and input API. The service
+owns display polling, focused-app event routing, and redraw/present cycles;
+see [`System/ui/README.md`](System/ui/README.md) for the API and hardware
+capability limits. The framework is intentionally software-rendered and does
+not add a display or input driver to bare-metal targets.
