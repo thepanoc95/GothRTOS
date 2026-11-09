@@ -78,12 +78,25 @@ int sg_target_getc_timeout(const sg_target_t *target, uint32_t timeout_ms);
 bool sysgoth_run(const sg_target_t *target, uint32_t baud);
 
 /* One receive-and-load cycle. Exposed so a test harness can drive the protocol
- * against a memory-backed target. */
+ * against a memory-backed target. `timeout_ms` applies to both the initial
+ * magic scan and subsequent bytes. */
 goth_sparse_status_t sysgoth_receive(const sg_target_t *target,
                                      uint8_t *scratch,
                                      size_t scratch_size,
                                      uint32_t timeout_ms,
                                      sg_boot_stats_t *stats);
+
+/* Like sysgoth_receive, but uses a separate (typically shorter) timeout while
+ * scanning for the magic. Once magic is found the body is read with
+ * `body_timeout_ms`, so callers can poll for an incoming image without
+ * aborting a transfer mid-stream. Returns GOTH_SPARSE_TRUNCATED if no magic
+ * arrives within `magic_timeout_ms`. */
+goth_sparse_status_t sysgoth_receive_ex(const sg_target_t *target,
+                                        uint8_t *scratch,
+                                        size_t scratch_size,
+                                        uint32_t magic_timeout_ms,
+                                        uint32_t body_timeout_ms,
+                                        sg_boot_stats_t *stats);
 
 /* Parses and validates an image already held in memory, then applies it. */
 goth_sparse_status_t sysgoth_apply_buffer(const sg_target_t *target,

@@ -242,6 +242,32 @@ AMD64_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
 QEMU_AMD64 ?= qemu-system-x86_64
 QEMU_AMD64_FLAGS ?= -m 256M -nographic -no-reboot
 
+# SYSGOTH AMD64 bootloader: VGA + COM1 console, loads SparseKernel.img3 from
+# serial or from disk (ATA HDD/SSD in IDE mode, ATAPI CD-ROM). Linked at 4 MiB
+# so it does not overlap kernels that load at 1 MiB.
+SYSGOTH_AMD64_CC ?= $(AMD64_CC)
+SYSGOTH_AMD64_OBJCOPY ?= $(AMD64_OBJCOPY)
+SYSGOTH_AMD64_BUILD_DIR ?= $(BUILD_DIR)/sysgoth-amd64
+SYSGOTH_AMD64_CPPFLAGS ?= -Iinclude -Isysgoth -Ipexpert/amd64
+SYSGOTH_AMD64_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -m64 \
+	-ffreestanding -fno-builtin -fno-stack-protector -fno-pie \
+	-mno-red-zone -fno-unwind-tables -fno-asynchronous-unwind-tables \
+	-ffunction-sections -fdata-sections -O2 -g
+SYSGOTH_AMD64_LDFLAGS ?= -nostdlib -nostartfiles -T sysgoth/amd64.ld \
+	-Wl,--gc-sections -Wl,-Map=$(SYSGOTH_AMD64_BUILD_DIR)/sysgoth.map -no-pie
+SYSGOTH_AMD64_LIBS ?= -lgcc
+SYSGOTH_AMD64_C_SOURCES = sysgoth/target_amd64.c sysgoth/amd64_vga.c \
+	sysgoth/amd64_hw.c sysgoth/amd64_block.c sysgoth/sysgoth.c \
+	os/loader/sparsekernel.c pexpert/amd64/amd64_libc.c
+SYSGOTH_AMD64_ASM_SOURCES = sysgoth/amd64_start.S
+SYSGOTH_AMD64_OBJECTS = $(patsubst %.c,$(SYSGOTH_AMD64_BUILD_DIR)/obj/%.o,$(SYSGOTH_AMD64_C_SOURCES)) \
+	$(patsubst %.S,$(SYSGOTH_AMD64_BUILD_DIR)/obj/%.o,$(SYSGOTH_AMD64_ASM_SOURCES))
+SYSGOTH_AMD64_ELF = $(SYSGOTH_AMD64_BUILD_DIR)/sysgoth.elf
+SYSGOTH_AMD64_BIN = $(SYSGOTH_AMD64_BUILD_DIR)/sysgoth.bin
+SYSGOTH_AMD64_HEADERS = include/gothrtos/sparsekernel.h sysgoth/sysgoth.h \
+	sysgoth/amd64_io.h sysgoth/amd64_vga.h sysgoth/amd64_hw.h \
+	sysgoth/amd64_block.h
+
 # Raspberry Pi Pico (RP2040, Cortex-M0+) and Pico 2 (RP2350, Cortex-M33).
 # Both build a flat SRAM image that is either flashed directly or streamed by
 # the SYSGOTH bootloader as SparseKernel.img3.
@@ -306,6 +332,7 @@ endif
 
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
 	rpi-zero run-rpi-zero test-rpi-zero amd64 run-amd64 test-amd64 \
+	sysgoth-amd64 run-sysgoth-amd64 \
 	pico pico2 \
 	build-ui
 
@@ -338,6 +365,11 @@ run-amd64: $(AMD64_ELF)
 
 test-amd64: $(AMD64_BIN)
 	sh tests/run_amd64_qemu.sh $(AMD64_ELF) $(AMD64_BUILD_DIR)/qemu.log
+
+sysgoth-amd64: $(SYSGOTH_AMD64_ELF) $(SYSGOTH_AMD64_BIN)
+
+run-sysgoth-amd64: $(SYSGOTH_AMD64_ELF)
+	$(QEMU_AMD64) $(QEMU_AMD64_FLAGS) -kernel $(SYSGOTH_AMD64_ELF)
 
 pico: $(PICO_ELF) $(PICO_IMG3)
 
@@ -431,6 +463,27 @@ $(AMD64_ELF): $(AMD64_OBJECTS) pexpert/amd64/amd64.ld
 $(AMD64_BIN): $(AMD64_ELF)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
 	$(AMD64_OBJCOPY) -O binary $< $@
+
+$(SYSGOTH_AMD64_BUILD_DIR):
+	@mkdir -p $(SYSGOTH_AMD64_BUILD_DIR)
+
+$(SYSGOTH_AMD64_BUILD_DIR)/obj/%.o: %.c $(SYSGOTH_AMD64_HEADERS) | $(SYSGOTH_AMD64_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC(sg-x64)" "$<"
+	$(SYSGOTH_AMD64_CC) $(SYSGOTH_AMD64_CPPFLAGS) $(SYSGOTH_AMD64_CFLAGS) -c $< -o $@
+
+$(SYSGOTH_AMD64_BUILD_DIR)/obj/%.o: %.S $(SYSGOTH_AMD64_HEADERS) | $(SYSGOTH_AMD64_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "AS(sg-x64)" "$<"
+	$(SYSGOTH_AMD64_CC) $(SYSGOTH_AMD64_CPPFLAGS) $(SYSGOTH_AMD64_CFLAGS) -c $< -o $@
+
+$(SYSGOTH_AMD64_ELF): $(SYSGOTH_AMD64_OBJECTS) sysgoth/amd64.ld
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD(sg-x64)" "$@"
+	$(SYSGOTH_AMD64_CC) $(SYSGOTH_AMD64_CFLAGS) $(SYSGOTH_AMD64_LDFLAGS) $(SYSGOTH_AMD64_OBJECTS) $(SYSGOTH_AMD64_LIBS) -o $@
+
+$(SYSGOTH_AMD64_BIN): $(SYSGOTH_AMD64_ELF)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
+	$(SYSGOTH_AMD64_OBJCOPY) -O binary $< $@
 
 # SparseKernel.img3: the sparse payload the SYSGOTH bootloader streams over
 # the UART. Every embedded build produces one so a board can be reflashed

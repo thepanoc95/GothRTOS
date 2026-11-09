@@ -4,7 +4,11 @@
  * starts us in 32-bit protected mode with paging off; we build identity page
  * tables, enter long mode and jump to kmain. This mirrors the ARM32 port's
  * amd64_start/arm32_start split: only the CPU setup and context switch differ,
- * the scheduling contract is the same. */
+ * the scheduling contract is the same.
+ *
+ * The ELF entry (goth_amd64_sysgoth_entry) is a 64-bit entry for chainloaders
+ * such as SYSGOTH that are already in long mode. Multiboot uses the 32-bit
+ * entry (_start) via the a.out kludge entry_addr field. */
 
 .set MB_MAGIC, 0x1BADB002
 .set MB_FLAGS, 0x00010003           /* page-align, mem info, a.out kludge */
@@ -89,6 +93,35 @@ _start:
 .size _start, . - _start
 
 .code64
+/* 64-bit entry for SYSGOTH and other long-mode chainloaders. The image has
+ * already been applied to its link addresses and BSS is zero; the loader is
+ * in long mode with at least the first 1 GiB identity-mapped. */
+.global goth_amd64_sysgoth_entry
+.type goth_amd64_sysgoth_entry, %function
+goth_amd64_sysgoth_entry:
+    cli
+    mov $boot_stack_top, %rsp
+    xor %rbp, %rbp
+    lgdt gdt64_ptr
+    pushq $0x08
+    leaq .Lsysgoth_cs(%rip), %rax
+    pushq %rax
+    lretq
+.Lsysgoth_cs:
+    mov $0x10, %ax
+    mov %ax, %ds
+    mov %ax, %es
+    mov %ax, %ss
+    mov %ax, %fs
+    mov %ax, %gs
+    mov $boot_stack_top, %rsp
+    call kmain
+1:
+    cli
+    hlt
+    jmp 1b
+.size goth_amd64_sysgoth_entry, . - goth_amd64_sysgoth_entry
+
 .type goth_amd64_long_mode, %function
 goth_amd64_long_mode:
     mov $0x10, %ax
