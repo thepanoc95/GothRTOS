@@ -18,6 +18,18 @@ bun run osbuild/src/cli.ts --list
 
 See `osbuild/README.md` for details.
 
+## Source layout
+
+- `rtos/` contains the freestanding kernel core, including the hardware driver
+  framework (`hdf.c`); public interfaces live under `include/gothrtos/`.
+- `pexpert/` contains platform-specific ports and linker scripts.
+- `kernel/` and `os/` contain Lua userland services, boot modules, and loaders.
+- `libc/`, `libkapi/`, and `lib/` contain the C library, syscall wrapper, and
+  reusable Klib components, respectively.
+- `System/` contains the GothRTOS UI bindings and vendored LVGL sources;
+  `osbuild/` contains the build-system UI.
+- `tests/` contains the host test suite.
+
 ## GothRTOS userland UI
 
 `System/ui.lua` provides a dark-first UI toolkit and a single-owner foreground
