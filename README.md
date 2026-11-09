@@ -1,28 +1,10 @@
-# GothRTOS
+# GothRTOS PureNext
+Well, I got tired of it, like, I was literally vibe coding the **whole system**,
+and I don't wanna make this OS' be known as vibe coded, so, this branch will be made only and just by myself, the whole system nanokernel core, made by me.
 
-GothRTOS is a small, statically allocated microkernel written in C11 with a
-lua-oriented userspace execution.
-
-> The name just started as a joke and I was like "Huh, why not?" and now there
-> it is.
-
-## Build system UI
-
-`OSBuild` is a TypeScript/Bun terminal UI for browsing boards and ports,
-checking toolchains, streaming builds, and scaffolding new platform experts:
-
-```sh
-make build-ui
-bun run osbuild/src/cli.ts --list
-```
-
-See `osbuild/README.md` for details.
-
-## GothRTOS userland UI
-
-`System/ui.lua` provides a dark-first UI toolkit and a single-owner foreground
-UI service over the existing GothGfx framebuffer and input API. The service
-owns display polling, focused-app event routing, and redraw/present cycles;
-see [`System/ui/README.md`](System/ui/README.md) for the API and hardware
-capability limits. The framework is intentionally software-rendered and does
-not add a display or input driver to bare-metal targets.
+## Current TODO
+- [ ] implement base nanokernel
+- [ ] the HAL
+- [ ] the KAL for usermode execution (like a parasite OS lol)
+- [ ] desktop support
+- [ ] mobile support (parasited on Android 7.1.1 and higher.)
