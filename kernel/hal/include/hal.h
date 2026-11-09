@@ -1,0 +1,1 @@
+void OSBootStartup(void);
