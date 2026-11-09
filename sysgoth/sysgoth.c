@@ -279,11 +279,12 @@ static uint64_t sg_read_u64(const uint8_t *bytes)
            ((uint64_t)sg_read_u32(bytes + 4) << 32);
 }
 
-goth_sparse_status_t sysgoth_receive(const sg_target_t *target,
-                                     uint8_t *scratch,
-                                     size_t scratch_size,
-                                     uint32_t timeout_ms,
-                                     sg_boot_stats_t *stats)
+goth_sparse_status_t sysgoth_receive_ex(const sg_target_t *target,
+                                        uint8_t *scratch,
+                                        size_t scratch_size,
+                                        uint32_t magic_timeout_ms,
+                                        uint32_t body_timeout_ms,
+                                        sg_boot_stats_t *stats)
 {
     uint8_t header[GOTH_SPARSE_HEADER_SIZE];
     uint32_t chunk_count;
@@ -297,12 +298,12 @@ goth_sparse_status_t sysgoth_receive(const sg_target_t *target,
         scratch_size < GOTH_SPARSE_CHUNK_HEADER_SIZE) {
         return GOTH_SPARSE_INVALID_ARGUMENT;
     }
-    if (!sg_wait_for_magic(target, header, timeout_ms)) {
+    if (!sg_wait_for_magic(target, header, magic_timeout_ms)) {
         return GOTH_SPARSE_TRUNCATED;
     }
     if (!sg_read_exact(target, header + SYSGOTH_MAGIC_SIZE,
                        GOTH_SPARSE_HEADER_SIZE - SYSGOTH_MAGIC_SIZE,
-                       timeout_ms)) {
+                       body_timeout_ms)) {
         return GOTH_SPARSE_TRUNCATED;
     }
 
@@ -327,7 +328,7 @@ goth_sparse_status_t sysgoth_receive(const sg_target_t *target,
         uint32_t crc;
 
         if (!sg_read_exact(target, chunk_header,
-                           GOTH_SPARSE_CHUNK_HEADER_SIZE, timeout_ms)) {
+                           GOTH_SPARSE_CHUNK_HEADER_SIZE, body_timeout_ms)) {
             return GOTH_SPARSE_TRUNCATED;
         }
         type = sg_read_u32(chunk_header);
@@ -350,7 +351,7 @@ goth_sparse_status_t sysgoth_receive(const sg_target_t *target,
         if (length > scratch_size) {
             return GOTH_SPARSE_BAD_CHUNK;
         }
-        if (!sg_read_exact(target, scratch, length, timeout_ms)) {
+        if (!sg_read_exact(target, scratch, length, body_timeout_ms)) {
             return GOTH_SPARSE_TRUNCATED;
         }
         if (goth_sparse_crc32(scratch, length) != crc) {
@@ -369,6 +370,16 @@ goth_sparse_status_t sysgoth_receive(const sg_target_t *target,
         stats->zero_bytes = store.zero_bytes;
     }
     return GOTH_SPARSE_OK;
+}
+
+goth_sparse_status_t sysgoth_receive(const sg_target_t *target,
+                                     uint8_t *scratch,
+                                     size_t scratch_size,
+                                     uint32_t timeout_ms,
+                                     sg_boot_stats_t *stats)
+{
+    return sysgoth_receive_ex(target, scratch, scratch_size, timeout_ms,
+                              timeout_ms, stats);
 }
 
 bool sysgoth_run(const sg_target_t *target, uint32_t baud)

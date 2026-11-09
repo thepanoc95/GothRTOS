@@ -1,4 +1,6 @@
-ENTRY(_start)
+/* ELF entry is the 64-bit SYSGOTH/chainload entry. Multiboot (a.out kludge)
+   jumps to _start (32-bit) via the header's entry_addr field. */
+ENTRY(goth_amd64_sysgoth_entry)
 
 SECTIONS
 {

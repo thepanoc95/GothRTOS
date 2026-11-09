@@ -310,6 +310,21 @@ static void test_status_names(void)
                   "bad payload crc") == 0);
 }
 
+static void test_receive_ex_magic_timeout(void)
+{
+    /* With no data on the wire, receive_ex should return TRUNCATED once the
+     * magic timeout expires, allowing a caller to poll other sources. */
+    sg_boot_stats_t stats;
+    uint8_t scratch[4096];
+
+    memset(&fake, 0, sizeof(fake));
+    fake_regions[0].base = fake_base();
+    fake.feed_size = 0U;
+
+    assert(sysgoth_receive_ex(&fake_target, scratch, sizeof(scratch), 5U,
+                              1000U, &stats) == GOTH_SPARSE_TRUNCATED);
+}
+
 int main(void)
 {
     test_protocol_round_trip();
@@ -320,5 +335,6 @@ int main(void)
     test_apply_buffer();
     test_run_reports_and_jumps();
     test_status_names();
+    test_receive_ex_magic_timeout();
     return 0;
 }

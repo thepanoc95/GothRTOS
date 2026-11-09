@@ -3,9 +3,6 @@ AR ?= ar
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -static
 CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/um -static
 BUILD_DIR ?= build
-KLIB_CPPFLAGS ?= -Ilib/klib -static
-KLIB_CFLAGS ?= -std=gnu11 -O2 -pthread -static
-KLIB_LIBS ?= -lm -pthread
 LIBC_CPPFLAGS ?= -Ilibc/include -Iinclude -static
 LIBC_CFLAGS ?= -std=c11 -ffreestanding -fno-builtin -static
 LUA_CPPFLAGS ?= -Ios/lua -Iinclude
@@ -19,9 +16,6 @@ LIBC_TEST_DEFINES = -Derrno=gothc_errno -Dmalloc=gothc_malloc -Dcalloc=gothc_cal
 
 UNAME_S := $(shell uname -s 2>/dev/null)
 
-# KLib currently contains x86-specific code (including SSE2 intrinsics).
-# GothRTOS does not use KLib on ARM targets, so detect the compiler target
-# rather than the machine running make (this also handles cross-compilers).
 CC_TARGET := $(shell $(CC) -dumpmachine 2>/dev/null)
 ifneq ($(filter aarch64% arm64%,$(CC_TARGET)),)
   GOTHC_START_SOURCE ?= libc/src/start_aarch64.S
@@ -30,12 +24,6 @@ else ifneq ($(filter x86_64% amd64%,$(CC_TARGET)),)
 else
   GOTHC_START_SOURCE ?=
 endif
-ifneq ($(filter aarch64% arm%,$(CC_TARGET)),)
-  KLIB_ENABLED ?= no
-else
-  KLIB_ENABLED ?= yes
-endif
-
 # LLVM-style target triple of the compiler, e.g. "x86_64-linux-gnu". The
 # user-mode platform expert reports this as its platform identifier, so it is
 # read from the compiler rather than guessed from preprocessor macros. Clang
@@ -107,8 +95,6 @@ LVGL_CFLAGS ?= -std=c11 -O2 -Wall -Wextra -pedantic \
 	-Wno-unused-parameter -ffreestanding -fno-builtin -fno-stack-protector
 OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 KAPI_OBJECT = $(BUILD_DIR)/libkapi/kapi.o
-KLIB_SOURCES = kalloc.c kbarena.c keigen.c kexpr.c kmath.c kmempool.c knhx.c ksa.c kson.c kstring.c ksw.c kthread.c
-KLIB_OBJECTS = $(patsubst %.c,$(BUILD_DIR)/klib/%.o,$(KLIB_SOURCES))
 LIBC_SOURCES = libc/src/string.c libc/src/stdlib.c libc/src/stdio.c \
 	libc/src/convert.c libc/src/process.c libc/src/ctype.c \
 	libc/src/locale.c libc/src/math.c libc/src/time.c libc/src/signal.c \
@@ -124,18 +110,6 @@ GOTHC_START_OBJECT = $(patsubst libc/src/%.S,$(BUILD_DIR)/gothclua/%.o,$(GOTHC_S
 LIBRARY = $(BUILD_DIR)/libgothrtos.a
 UM_PLATFORM_STAMP = $(BUILD_DIR)/.um_platform_$(UM_PLATFORM)_$(UM_CONTEXT)
 KAPI_LIBRARY = $(BUILD_DIR)/libkapi.a
-KLIB_LIBRARY = $(BUILD_DIR)/libklib.a
-ifeq ($(KLIB_ENABLED),yes)
-KLIB_ALL_TARGETS = $(KLIB_LIBRARY)
-KLIB_TEST_TARGETS = $(KLIB_TEST_BINARY)
-KLIB_TEST_COMMAND = $(KLIB_TEST_BINARY)
-else ifeq ($(KLIB_ENABLED),no)
-KLIB_ALL_TARGETS =
-KLIB_TEST_TARGETS =
-KLIB_TEST_COMMAND =
-else
-$(error KLIB_ENABLED must be "yes" or "no")
-endif
 LIBC_LIBRARY = $(BUILD_DIR)/libgothc.a
 LUA_LIBRARY = $(BUILD_DIR)/liblua.a
 GOTHC_LUA_LIBRARY = $(BUILD_DIR)/liblua-gothc.a
@@ -246,6 +220,32 @@ AMD64_HEADERS = include/gothrtos/kernel.h include/gothrtos/pexpert.h \
 QEMU_AMD64 ?= qemu-system-x86_64
 QEMU_AMD64_FLAGS ?= -m 256M -nographic -no-reboot
 
+# SYSGOTH AMD64 bootloader: VGA + COM1 console, loads SparseKernel.img3 from
+# serial or from disk (ATA HDD/SSD in IDE mode, ATAPI CD-ROM). Linked at 4 MiB
+# so it does not overlap kernels that load at 1 MiB.
+SYSGOTH_AMD64_CC ?= $(AMD64_CC)
+SYSGOTH_AMD64_OBJCOPY ?= $(AMD64_OBJCOPY)
+SYSGOTH_AMD64_BUILD_DIR ?= $(BUILD_DIR)/sysgoth-amd64
+SYSGOTH_AMD64_CPPFLAGS ?= -Iinclude -Isysgoth -Ipexpert/amd64
+SYSGOTH_AMD64_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -m64 \
+	-ffreestanding -fno-builtin -fno-stack-protector -fno-pie \
+	-mno-red-zone -fno-unwind-tables -fno-asynchronous-unwind-tables \
+	-ffunction-sections -fdata-sections -O2 -g
+SYSGOTH_AMD64_LDFLAGS ?= -nostdlib -nostartfiles -T sysgoth/amd64.ld \
+	-Wl,--gc-sections -Wl,-Map=$(SYSGOTH_AMD64_BUILD_DIR)/sysgoth.map -no-pie
+SYSGOTH_AMD64_LIBS ?= -lgcc
+SYSGOTH_AMD64_C_SOURCES = sysgoth/target_amd64.c sysgoth/amd64_vga.c \
+	sysgoth/amd64_hw.c sysgoth/amd64_block.c sysgoth/sysgoth.c \
+	os/loader/sparsekernel.c pexpert/amd64/amd64_libc.c
+SYSGOTH_AMD64_ASM_SOURCES = sysgoth/amd64_start.S
+SYSGOTH_AMD64_OBJECTS = $(patsubst %.c,$(SYSGOTH_AMD64_BUILD_DIR)/obj/%.o,$(SYSGOTH_AMD64_C_SOURCES)) \
+	$(patsubst %.S,$(SYSGOTH_AMD64_BUILD_DIR)/obj/%.o,$(SYSGOTH_AMD64_ASM_SOURCES))
+SYSGOTH_AMD64_ELF = $(SYSGOTH_AMD64_BUILD_DIR)/sysgoth.elf
+SYSGOTH_AMD64_BIN = $(SYSGOTH_AMD64_BUILD_DIR)/sysgoth.bin
+SYSGOTH_AMD64_HEADERS = include/gothrtos/sparsekernel.h sysgoth/sysgoth.h \
+	sysgoth/amd64_io.h sysgoth/amd64_vga.h sysgoth/amd64_hw.h \
+	sysgoth/amd64_block.h
+
 # Raspberry Pi Pico (RP2040, Cortex-M0+) and Pico 2 (RP2350, Cortex-M33).
 # Both build a flat SRAM image that is either flashed directly or streamed by
 # the SYSGOTH bootloader as SparseKernel.img3.
@@ -292,7 +292,6 @@ PICO2_IMG3 = $(PICO2_BUILD_DIR)/SparseKernel.img3
 
 LIBC_TEST_OBJECTS = $(BUILD_DIR)/libc_test/string.o $(BUILD_DIR)/libc_test/stdlib.o
 TEST_BINARY = $(BUILD_DIR)/test_kernel
-KLIB_TEST_BINARY = $(BUILD_DIR)/test_klib
 LIBC_TEST_BINARY = $(BUILD_DIR)/test_libc
 
 # --- Pretty Output Configuration ---
@@ -310,10 +309,11 @@ endif
 
 .PHONY: all test clean kernel lua arm32 run-arm32 test-arm32 \
 	rpi-zero run-rpi-zero test-rpi-zero amd64 run-amd64 test-amd64 \
+	sysgoth-amd64 run-sysgoth-amd64 \
 	pico pico2 \
 	build-ui
 
-all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY) $(GOTHGFX_OBJECT) $(LVGL_LIBRARY)
+all: $(LIBRARY) $(KAPI_LIBRARY) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY) $(GOTHGFX_OBJECT) $(LVGL_LIBRARY)
 
 kernel: $(KERNEL_BINARY)
 
@@ -342,6 +342,11 @@ run-amd64: $(AMD64_ELF)
 
 test-amd64: $(AMD64_BIN)
 	sh tests/run_amd64_qemu.sh $(AMD64_ELF) $(AMD64_BUILD_DIR)/qemu.log
+
+sysgoth-amd64: $(SYSGOTH_AMD64_ELF) $(SYSGOTH_AMD64_BIN)
+
+run-sysgoth-amd64: $(SYSGOTH_AMD64_ELF)
+	$(QEMU_AMD64) $(QEMU_AMD64_FLAGS) -kernel $(SYSGOTH_AMD64_ELF)
 
 pico: $(PICO_ELF) $(PICO_IMG3)
 
@@ -442,6 +447,27 @@ $(AMD64_BIN): $(AMD64_ELF)
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
 	$(AMD64_OBJCOPY) -O binary $< $@
 
+$(SYSGOTH_AMD64_BUILD_DIR):
+	@mkdir -p $(SYSGOTH_AMD64_BUILD_DIR)
+
+$(SYSGOTH_AMD64_BUILD_DIR)/obj/%.o: %.c $(SYSGOTH_AMD64_HEADERS) | $(SYSGOTH_AMD64_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC(sg-x64)" "$<"
+	$(SYSGOTH_AMD64_CC) $(SYSGOTH_AMD64_CPPFLAGS) $(SYSGOTH_AMD64_CFLAGS) -c $< -o $@
+
+$(SYSGOTH_AMD64_BUILD_DIR)/obj/%.o: %.S $(SYSGOTH_AMD64_HEADERS) | $(SYSGOTH_AMD64_BUILD_DIR)
+	@mkdir -p $(dir $@)
+	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "AS(sg-x64)" "$<"
+	$(SYSGOTH_AMD64_CC) $(SYSGOTH_AMD64_CPPFLAGS) $(SYSGOTH_AMD64_CFLAGS) -c $< -o $@
+
+$(SYSGOTH_AMD64_ELF): $(SYSGOTH_AMD64_OBJECTS) sysgoth/amd64.ld
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD(sg-x64)" "$@"
+	$(SYSGOTH_AMD64_CC) $(SYSGOTH_AMD64_CFLAGS) $(SYSGOTH_AMD64_LDFLAGS) $(SYSGOTH_AMD64_OBJECTS) $(SYSGOTH_AMD64_LIBS) -o $@
+
+$(SYSGOTH_AMD64_BIN): $(SYSGOTH_AMD64_ELF)
+	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "OBJCOPY" "$@"
+	$(SYSGOTH_AMD64_OBJCOPY) -O binary $< $@
+
 # SparseKernel.img3: the sparse payload the SYSGOTH bootloader streams over
 # the UART. Every embedded build produces one so a board can be reflashed
 # over the serial link alone. The generator is a host tool, so it can encode
@@ -526,15 +552,6 @@ $(KAPI_LIBRARY): $(KAPI_OBJECT)
 	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
 	$(AR) rcs $@ $^
 
-$(BUILD_DIR)/klib/%.o: lib/klib/%.c | $(BUILD_DIR)
-	@mkdir -p $(dir $@)
-	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
-	$(CC) $(KLIB_CPPFLAGS) $(KLIB_CFLAGS) -c $< -o $@
-
-$(KLIB_LIBRARY): $(KLIB_OBJECTS)
-	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
-	$(AR) rcs $@ $^
-
 $(BUILD_DIR)/libc/%.o: libc/src/%.c $(LIBC_HEADERS) | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
@@ -599,10 +616,6 @@ $(TEST_BINARY): tests/test_kernel.c $(LIBRARY) $(KAPI_LIBRARY) include/gothrtos/
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_kernel.c -L$(BUILD_DIR) -lkapi -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
-$(KLIB_TEST_BINARY): tests/test_klib.c $(KLIB_LIBRARY) | $(BUILD_DIR)
-	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
-	$(CC) $(KLIB_CPPFLAGS) $(CFLAGS) $< -L$(BUILD_DIR) -lklib $(KLIB_LIBS) -o $@
-
 $(BUILD_DIR)/libc_test/%.o: libc/src/%.c libc/include/string.h libc/include/stdlib.h libc/include/errno.h libc/include/limits.h include/gothrtos/libc.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
@@ -652,10 +665,9 @@ $(USERAPI_LUA_STAMP): tests/test_userapi.lua $(KERNEL_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi lua binding tests..."
 	$(KERNEL_BINARY) -init=tests/test_userapi.lua -verbose=0
 
-test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LVGL_LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY) $(GOTHGFX_TEST_BINARY)
+test: $(TEST_BINARY) $(LIBC_TEST_BINARY) $(LVGL_LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY) $(GOTHGFX_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
-	$(KLIB_TEST_COMMAND)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running libc tests..."
 	$(LIBC_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running GothLibC-backed LVGL smoke test..."
