@@ -3,9 +3,6 @@ AR ?= ar
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -static
 CPPFLAGS ?= -Iinclude -Ipexpert -Ipexpert/um -static
 BUILD_DIR ?= build
-KLIB_CPPFLAGS ?= -Ilib/klib -static
-KLIB_CFLAGS ?= -std=gnu11 -O2 -pthread -static
-KLIB_LIBS ?= -lm -pthread
 LIBC_CPPFLAGS ?= -Ilibc/include -Iinclude -static
 LIBC_CFLAGS ?= -std=c11 -ffreestanding -fno-builtin -static
 LUA_CPPFLAGS ?= -Ios/lua -Iinclude
@@ -19,9 +16,6 @@ LIBC_TEST_DEFINES = -Derrno=gothc_errno -Dmalloc=gothc_malloc -Dcalloc=gothc_cal
 
 UNAME_S := $(shell uname -s 2>/dev/null)
 
-# KLib currently contains x86-specific code (including SSE2 intrinsics).
-# GothRTOS does not use KLib on ARM targets, so detect the compiler target
-# rather than the machine running make (this also handles cross-compilers).
 CC_TARGET := $(shell $(CC) -dumpmachine 2>/dev/null)
 ifneq ($(filter aarch64% arm64%,$(CC_TARGET)),)
   GOTHC_START_SOURCE ?= libc/src/start_aarch64.S
@@ -30,12 +24,6 @@ else ifneq ($(filter x86_64% amd64%,$(CC_TARGET)),)
 else
   GOTHC_START_SOURCE ?=
 endif
-ifneq ($(filter aarch64% arm%,$(CC_TARGET)),)
-  KLIB_ENABLED ?= no
-else
-  KLIB_ENABLED ?= yes
-endif
-
 # LLVM-style target triple of the compiler, e.g. "x86_64-linux-gnu". The
 # user-mode platform expert reports this as its platform identifier, so it is
 # read from the compiler rather than guessed from preprocessor macros. Clang
@@ -103,8 +91,6 @@ LVGL_OBJECTS = $(patsubst System/lvgl/src/%.c,$(BUILD_DIR)/lvgl/%.o,$(LVGL_SOURC
 LVGL_LIBRARY = $(BUILD_DIR)/liblvgl.a
 OBJECTS = $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES))
 KAPI_OBJECT = $(BUILD_DIR)/libkapi/kapi.o
-KLIB_SOURCES = kalloc.c kbarena.c keigen.c kexpr.c kmath.c kmempool.c knhx.c ksa.c kson.c kstring.c ksw.c kthread.c
-KLIB_OBJECTS = $(patsubst %.c,$(BUILD_DIR)/klib/%.o,$(KLIB_SOURCES))
 LIBC_SOURCES = libc/src/string.c libc/src/stdlib.c libc/src/stdio.c \
 	libc/src/convert.c libc/src/process.c libc/src/ctype.c \
 	libc/src/locale.c libc/src/math.c libc/src/time.c libc/src/signal.c \
@@ -120,18 +106,6 @@ GOTHC_START_OBJECT = $(patsubst libc/src/%.S,$(BUILD_DIR)/gothclua/%.o,$(GOTHC_S
 LIBRARY = $(BUILD_DIR)/libgothrtos.a
 UM_PLATFORM_STAMP = $(BUILD_DIR)/.um_platform_$(UM_PLATFORM)_$(UM_CONTEXT)
 KAPI_LIBRARY = $(BUILD_DIR)/libkapi.a
-KLIB_LIBRARY = $(BUILD_DIR)/libklib.a
-ifeq ($(KLIB_ENABLED),yes)
-KLIB_ALL_TARGETS = $(KLIB_LIBRARY)
-KLIB_TEST_TARGETS = $(KLIB_TEST_BINARY)
-KLIB_TEST_COMMAND = $(KLIB_TEST_BINARY)
-else ifeq ($(KLIB_ENABLED),no)
-KLIB_ALL_TARGETS =
-KLIB_TEST_TARGETS =
-KLIB_TEST_COMMAND =
-else
-$(error KLIB_ENABLED must be "yes" or "no")
-endif
 LIBC_LIBRARY = $(BUILD_DIR)/libgothc.a
 LUA_LIBRARY = $(BUILD_DIR)/liblua.a
 GOTHC_LUA_LIBRARY = $(BUILD_DIR)/liblua-gothc.a
@@ -314,7 +288,6 @@ PICO2_IMG3 = $(PICO2_BUILD_DIR)/SparseKernel.img3
 
 LIBC_TEST_OBJECTS = $(BUILD_DIR)/libc_test/string.o $(BUILD_DIR)/libc_test/stdlib.o
 TEST_BINARY = $(BUILD_DIR)/test_kernel
-KLIB_TEST_BINARY = $(BUILD_DIR)/test_klib
 LIBC_TEST_BINARY = $(BUILD_DIR)/test_libc
 
 # --- Pretty Output Configuration ---
@@ -336,7 +309,7 @@ endif
 	pico pico2 \
 	build-ui
 
-all: $(LIBRARY) $(KAPI_LIBRARY) $(KLIB_ALL_TARGETS) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY) $(GOTHGFX_OBJECT) $(LVGL_LIBRARY)
+all: $(LIBRARY) $(KAPI_LIBRARY) $(LIBC_LIBRARY) $(LUA_LIBRARY) $(LUA_INTERPRETER_BINARY) $(LUAEXEC_OBJECT) $(GOTHLIB_OBJECT) $(KERNLIB_OBJECT) $(KERNEL_BINARY) $(GOTHGFX_OBJECT) $(LVGL_LIBRARY)
 
 kernel: $(KERNEL_BINARY)
 
@@ -569,15 +542,6 @@ $(KAPI_LIBRARY): $(KAPI_OBJECT)
 	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
 	$(AR) rcs $@ $^
 
-$(BUILD_DIR)/klib/%.o: lib/klib/%.c | $(BUILD_DIR)
-	@mkdir -p $(dir $@)
-	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
-	$(CC) $(KLIB_CPPFLAGS) $(KLIB_CFLAGS) -c $< -o $@
-
-$(KLIB_LIBRARY): $(KLIB_OBJECTS)
-	@printf "  $(COLOR_AR)%-12s$(RESET) %s\n" "AR" "$@"
-	$(AR) rcs $@ $^
-
 $(BUILD_DIR)/libc/%.o: libc/src/%.c $(LIBC_HEADERS) | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
@@ -642,10 +606,6 @@ $(TEST_BINARY): tests/test_kernel.c $(LIBRARY) $(KAPI_LIBRARY) include/gothrtos/
 	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
 	$(CC) $(CPPFLAGS) $(CFLAGS) tests/test_kernel.c -L$(BUILD_DIR) -lkapi -lgothrtos $(UM_PLATFORM_LIBS) -o $@
 
-$(KLIB_TEST_BINARY): tests/test_klib.c $(KLIB_LIBRARY) | $(BUILD_DIR)
-	@printf "  $(COLOR_LD)%-12s$(RESET) %s\n" "LD" "$@"
-	$(CC) $(KLIB_CPPFLAGS) $(CFLAGS) $< -L$(BUILD_DIR) -lklib $(KLIB_LIBS) -o $@
-
 $(BUILD_DIR)/libc_test/%.o: libc/src/%.c libc/include/string.h libc/include/stdlib.h libc/include/errno.h libc/include/limits.h include/gothrtos/libc.h | $(BUILD_DIR)
 	@mkdir -p $(dir $@)
 	@printf "  $(COLOR_CC)%-12s$(RESET) %s\n" "CC" "$<"
@@ -695,10 +655,9 @@ $(USERAPI_LUA_STAMP): tests/test_userapi.lua $(KERNEL_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running userapi lua binding tests..."
 	$(KERNEL_BINARY) -init=tests/test_userapi.lua -verbose=0
 
-test: $(TEST_BINARY) $(KLIB_TEST_TARGETS) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY) $(GOTHGFX_TEST_BINARY)
+test: $(TEST_BINARY) $(LIBC_TEST_BINARY) $(LUAEXEC_TEST_BINARY) $(BIN_FMT_TEST_BINARY) $(FDT_TEST_BINARY) $(CMDLINE_TEST_BINARY) $(HDF_TEST_BINARY) $(SPARSE_TEST_BINARY) $(SYSGOTH_TEST_BINARY) $(SPARSEKERNEL_GEN) $(USERAPI_TEST_BINARY) $(USERAPI_LUA_STAMP) $(KERNEL_BINARY) $(LUA_INTERPRETER_BINARY) $(GOTHGFX_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\\n" "TEST" "Running kernel tests..."
 	$(TEST_BINARY)
-	$(KLIB_TEST_COMMAND)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running libc tests..."
 	$(LIBC_TEST_BINARY)
 	@printf "  $(COLOR_TEST)%-12s$(RESET) %s\n" "TEST" "Running luaexec tests..."
